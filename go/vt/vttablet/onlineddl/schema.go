@@ -127,7 +127,7 @@ const (
 		WHERE
 			migration_uuid=%a
 	`
-	sqlRetryMigration = `UPDATE _vt.schema_migrations
+	sqlRetryMigrationWhere = `UPDATE _vt.schema_migrations
 		SET
 			migration_status='queued',
 			tablet=%a,
@@ -142,6 +142,21 @@ const (
 			migration_status IN ('failed', 'cancelled')
 			AND (%s)
 			LIMIT 1
+	`
+	sqlRetryMigration = `UPDATE _vt.schema_migrations
+		SET
+			migration_status='queued',
+			tablet=%a,
+			retries=retries + 1,
+			tablet_failure=0,
+			ready_timestamp=NULL,
+			started_timestamp=NULL,
+			liveness_timestamp=NULL,
+			completed_timestamp=NULL,
+			cleanup_timestamp=NULL
+		WHERE
+			migration_status IN ('failed', 'cancelled')
+			AND migration_uuid=%a
 	`
 	sqlWhereTabletFailure = `
 		tablet_failure=1
@@ -259,6 +274,7 @@ const (
 	sqlDropTrigger       = "DROP TRIGGER IF EXISTS `%a`.`%a`"
 	sqlShowTablesLike    = "SHOW TABLES LIKE '%a'"
 	sqlCreateTableLike   = "CREATE TABLE `%a` LIKE `%a`"
+	sqlDropTable         = "DROP TABLE `%a`"
 	sqlAlterTableOptions = "ALTER TABLE `%a` %s"
 	sqlShowColumnsFrom   = "SHOW COLUMNS FROM `%a`"
 	sqlStartVReplStream  = "UPDATE _vt.vreplication set state='Running' where db_name=%a and workflow=%a"

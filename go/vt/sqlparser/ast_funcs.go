@@ -36,30 +36,7 @@ import (
 // is interrupted, and the error is returned.
 func Walk(visit Visit, nodes ...SQLNode) error {
 	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		var err error
-		var kontinue bool
-		pre := func(cursor *Cursor) bool {
-			// If we already have found an error, don't visit these nodes, just exit early
-			if err != nil {
-				return false
-			}
-			kontinue, err = visit(cursor.Node())
-			if err != nil {
-				return true // we have to return true here so that post gets called
-			}
-			return kontinue
-		}
-		post := func(cursor *Cursor) bool {
-			return err == nil // now we can abort the traversal if an error was found
-		}
-
-		_, rewriterErr := Rewrite(node, pre, post)
-		if rewriterErr != nil {
-			return rewriterErr
-		}
+		err := VisitSQLNode(node, visit)
 		if err != nil {
 			return err
 		}
@@ -69,6 +46,8 @@ func Walk(visit Visit, nodes ...SQLNode) error {
 
 // Visit defines the signature of a function that
 // can be used to visit all nodes of a parse tree.
+// returning false on kontinue means that children will not be visited
+// returning an error will abort the visitation and return the error
 type Visit func(node SQLNode) (kontinue bool, err error)
 
 // Append appends the SQLNode to the buffer.
@@ -394,11 +373,7 @@ func NewWhere(typ WhereType, expr Expr) *Where {
 // and replaces it with to. If from matches root,
 // then to is returned.
 func ReplaceExpr(root, from, to Expr) Expr {
-	tmp, err := Rewrite(root, replaceExpr(from, to), nil)
-	if err != nil {
-		log.Errorf("Failed to rewrite expression. Rewriter returned an error: %s", err.Error())
-		return from
-	}
+	tmp := Rewrite(root, replaceExpr(from, to), nil)
 
 	expr, success := tmp.(Expr)
 	if !success {
@@ -484,6 +459,7 @@ func NewArgument(in string) Argument {
 	return Argument(in)
 }
 
+// Bytes return the []byte
 func (node *Literal) Bytes() []byte {
 	return []byte(node.Val)
 }
@@ -700,11 +676,12 @@ func (node *TableIdent) UnmarshalJSON(b []byte) error {
 func containEscapableChars(s string, at AtCount) bool {
 	isDbSystemVariable := at != NoAt
 
-	for i, c := range s {
-		letter := isLetter(uint16(c))
-		systemVarChar := isDbSystemVariable && isCarat(uint16(c))
+	for i := range s {
+		c := uint16(s[i])
+		letter := isLetter(c)
+		systemVarChar := isDbSystemVariable && isCarat(c)
 		if !(letter || systemVarChar) {
-			if i == 0 || !isDigit(uint16(c)) {
+			if i == 0 || !isDigit(c) {
 				return true
 			}
 		}
@@ -713,16 +690,12 @@ func containEscapableChars(s string, at AtCount) bool {
 	return false
 }
 
-func isKeyword(s string) bool {
-	_, isKeyword := keywordLookupTable.LookupString(s)
-	return isKeyword
-}
-
-func formatID(buf *TrackedBuffer, original, lowered string, at AtCount) {
-	if containEscapableChars(original, at) || isKeyword(lowered) {
+func formatID(buf *TrackedBuffer, original string, at AtCount) {
+	_, isKeyword := keywordLookupTable.LookupString(original)
+	if isKeyword || containEscapableChars(original, at) {
 		writeEscapedString(buf, original)
 	} else {
-		buf.Myprintf("%s", original)
+		buf.WriteString(original)
 	}
 }
 

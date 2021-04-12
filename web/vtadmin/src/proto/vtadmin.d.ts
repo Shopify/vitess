@@ -604,6 +604,9 @@ export namespace vtadmin {
 
         /** Schema table_definitions */
         table_definitions?: (tabletmanagerdata.ITableDefinition[]|null);
+
+        /** Schema table_sizes */
+        table_sizes?: ({ [k: string]: vtadmin.Schema.ITableSize }|null);
     }
 
     /** Represents a Schema. */
@@ -623,6 +626,9 @@ export namespace vtadmin {
 
         /** Schema table_definitions. */
         public table_definitions: tabletmanagerdata.ITableDefinition[];
+
+        /** Schema table_sizes. */
+        public table_sizes: { [k: string]: vtadmin.Schema.ITableSize };
 
         /**
          * Creates a new Schema instance using the specified properties.
@@ -693,6 +699,207 @@ export namespace vtadmin {
          * @returns JSON object
          */
         public toJSON(): { [k: string]: any };
+    }
+
+    namespace Schema {
+
+        /** Properties of a ShardTableSize. */
+        interface IShardTableSize {
+
+            /** ShardTableSize row_count */
+            row_count?: (number|Long|null);
+
+            /** ShardTableSize data_length */
+            data_length?: (number|Long|null);
+        }
+
+        /** Represents a ShardTableSize. */
+        class ShardTableSize implements IShardTableSize {
+
+            /**
+             * Constructs a new ShardTableSize.
+             * @param [properties] Properties to set
+             */
+            constructor(properties?: vtadmin.Schema.IShardTableSize);
+
+            /** ShardTableSize row_count. */
+            public row_count: (number|Long);
+
+            /** ShardTableSize data_length. */
+            public data_length: (number|Long);
+
+            /**
+             * Creates a new ShardTableSize instance using the specified properties.
+             * @param [properties] Properties to set
+             * @returns ShardTableSize instance
+             */
+            public static create(properties?: vtadmin.Schema.IShardTableSize): vtadmin.Schema.ShardTableSize;
+
+            /**
+             * Encodes the specified ShardTableSize message. Does not implicitly {@link vtadmin.Schema.ShardTableSize.verify|verify} messages.
+             * @param message ShardTableSize message or plain object to encode
+             * @param [writer] Writer to encode to
+             * @returns Writer
+             */
+            public static encode(message: vtadmin.Schema.IShardTableSize, writer?: $protobuf.Writer): $protobuf.Writer;
+
+            /**
+             * Encodes the specified ShardTableSize message, length delimited. Does not implicitly {@link vtadmin.Schema.ShardTableSize.verify|verify} messages.
+             * @param message ShardTableSize message or plain object to encode
+             * @param [writer] Writer to encode to
+             * @returns Writer
+             */
+            public static encodeDelimited(message: vtadmin.Schema.IShardTableSize, writer?: $protobuf.Writer): $protobuf.Writer;
+
+            /**
+             * Decodes a ShardTableSize message from the specified reader or buffer.
+             * @param reader Reader or buffer to decode from
+             * @param [length] Message length if known beforehand
+             * @returns ShardTableSize
+             * @throws {Error} If the payload is not a reader or valid buffer
+             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+             */
+            public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): vtadmin.Schema.ShardTableSize;
+
+            /**
+             * Decodes a ShardTableSize message from the specified reader or buffer, length delimited.
+             * @param reader Reader or buffer to decode from
+             * @returns ShardTableSize
+             * @throws {Error} If the payload is not a reader or valid buffer
+             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+             */
+            public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): vtadmin.Schema.ShardTableSize;
+
+            /**
+             * Verifies a ShardTableSize message.
+             * @param message Plain object to verify
+             * @returns `null` if valid, otherwise the reason why it is not
+             */
+            public static verify(message: { [k: string]: any }): (string|null);
+
+            /**
+             * Creates a ShardTableSize message from a plain object. Also converts values to their respective internal types.
+             * @param object Plain object
+             * @returns ShardTableSize
+             */
+            public static fromObject(object: { [k: string]: any }): vtadmin.Schema.ShardTableSize;
+
+            /**
+             * Creates a plain object from a ShardTableSize message. Also converts values to other types if specified.
+             * @param message ShardTableSize
+             * @param [options] Conversion options
+             * @returns Plain object
+             */
+            public static toObject(message: vtadmin.Schema.ShardTableSize, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+            /**
+             * Converts this ShardTableSize to JSON.
+             * @returns JSON object
+             */
+            public toJSON(): { [k: string]: any };
+        }
+
+        /** Properties of a TableSize. */
+        interface ITableSize {
+
+            /** TableSize row_count */
+            row_count?: (number|Long|null);
+
+            /** TableSize data_length */
+            data_length?: (number|Long|null);
+
+            /** TableSize by_shard */
+            by_shard?: ({ [k: string]: vtadmin.Schema.IShardTableSize }|null);
+        }
+
+        /** Represents a TableSize. */
+        class TableSize implements ITableSize {
+
+            /**
+             * Constructs a new TableSize.
+             * @param [properties] Properties to set
+             */
+            constructor(properties?: vtadmin.Schema.ITableSize);
+
+            /** TableSize row_count. */
+            public row_count: (number|Long);
+
+            /** TableSize data_length. */
+            public data_length: (number|Long);
+
+            /** TableSize by_shard. */
+            public by_shard: { [k: string]: vtadmin.Schema.IShardTableSize };
+
+            /**
+             * Creates a new TableSize instance using the specified properties.
+             * @param [properties] Properties to set
+             * @returns TableSize instance
+             */
+            public static create(properties?: vtadmin.Schema.ITableSize): vtadmin.Schema.TableSize;
+
+            /**
+             * Encodes the specified TableSize message. Does not implicitly {@link vtadmin.Schema.TableSize.verify|verify} messages.
+             * @param message TableSize message or plain object to encode
+             * @param [writer] Writer to encode to
+             * @returns Writer
+             */
+            public static encode(message: vtadmin.Schema.ITableSize, writer?: $protobuf.Writer): $protobuf.Writer;
+
+            /**
+             * Encodes the specified TableSize message, length delimited. Does not implicitly {@link vtadmin.Schema.TableSize.verify|verify} messages.
+             * @param message TableSize message or plain object to encode
+             * @param [writer] Writer to encode to
+             * @returns Writer
+             */
+            public static encodeDelimited(message: vtadmin.Schema.ITableSize, writer?: $protobuf.Writer): $protobuf.Writer;
+
+            /**
+             * Decodes a TableSize message from the specified reader or buffer.
+             * @param reader Reader or buffer to decode from
+             * @param [length] Message length if known beforehand
+             * @returns TableSize
+             * @throws {Error} If the payload is not a reader or valid buffer
+             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+             */
+            public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): vtadmin.Schema.TableSize;
+
+            /**
+             * Decodes a TableSize message from the specified reader or buffer, length delimited.
+             * @param reader Reader or buffer to decode from
+             * @returns TableSize
+             * @throws {Error} If the payload is not a reader or valid buffer
+             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+             */
+            public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): vtadmin.Schema.TableSize;
+
+            /**
+             * Verifies a TableSize message.
+             * @param message Plain object to verify
+             * @returns `null` if valid, otherwise the reason why it is not
+             */
+            public static verify(message: { [k: string]: any }): (string|null);
+
+            /**
+             * Creates a TableSize message from a plain object. Also converts values to their respective internal types.
+             * @param object Plain object
+             * @returns TableSize
+             */
+            public static fromObject(object: { [k: string]: any }): vtadmin.Schema.TableSize;
+
+            /**
+             * Creates a plain object from a TableSize message. Also converts values to other types if specified.
+             * @param message TableSize
+             * @param [options] Conversion options
+             * @returns Plain object
+             */
+            public static toObject(message: vtadmin.Schema.TableSize, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+            /**
+             * Converts this TableSize to JSON.
+             * @returns JSON object
+             */
+            public toJSON(): { [k: string]: any };
+        }
     }
 
     /** Properties of a Tablet. */
@@ -1229,6 +1436,9 @@ export namespace vtadmin {
 
         /** FindSchemaRequest cluster_ids */
         cluster_ids?: (string[]|null);
+
+        /** FindSchemaRequest table_size_options */
+        table_size_options?: (vtadmin.IGetSchemaTableSizeOptions|null);
     }
 
     /** Represents a FindSchemaRequest. */
@@ -1245,6 +1455,9 @@ export namespace vtadmin {
 
         /** FindSchemaRequest cluster_ids. */
         public cluster_ids: string[];
+
+        /** FindSchemaRequest table_size_options. */
+        public table_size_options?: (vtadmin.IGetSchemaTableSizeOptions|null);
 
         /**
          * Creates a new FindSchemaRequest instance using the specified properties.
@@ -1862,6 +2075,9 @@ export namespace vtadmin {
 
         /** GetSchemaRequest table */
         table?: (string|null);
+
+        /** GetSchemaRequest table_size_options */
+        table_size_options?: (vtadmin.IGetSchemaTableSizeOptions|null);
     }
 
     /** Represents a GetSchemaRequest. */
@@ -1881,6 +2097,9 @@ export namespace vtadmin {
 
         /** GetSchemaRequest table. */
         public table: string;
+
+        /** GetSchemaRequest table_size_options. */
+        public table_size_options?: (vtadmin.IGetSchemaTableSizeOptions|null);
 
         /**
          * Creates a new GetSchemaRequest instance using the specified properties.
@@ -1958,6 +2177,9 @@ export namespace vtadmin {
 
         /** GetSchemasRequest cluster_ids */
         cluster_ids?: (string[]|null);
+
+        /** GetSchemasRequest table_size_options */
+        table_size_options?: (vtadmin.IGetSchemaTableSizeOptions|null);
     }
 
     /** Represents a GetSchemasRequest. */
@@ -1971,6 +2193,9 @@ export namespace vtadmin {
 
         /** GetSchemasRequest cluster_ids. */
         public cluster_ids: string[];
+
+        /** GetSchemasRequest table_size_options. */
+        public table_size_options?: (vtadmin.IGetSchemaTableSizeOptions|null);
 
         /**
          * Creates a new GetSchemasRequest instance using the specified properties.
@@ -2128,6 +2353,102 @@ export namespace vtadmin {
 
         /**
          * Converts this GetSchemasResponse to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
+    /** Properties of a GetSchemaTableSizeOptions. */
+    interface IGetSchemaTableSizeOptions {
+
+        /** GetSchemaTableSizeOptions aggregate_sizes */
+        aggregate_sizes?: (boolean|null);
+
+        /** GetSchemaTableSizeOptions include_non_serving_shards */
+        include_non_serving_shards?: (boolean|null);
+    }
+
+    /** Represents a GetSchemaTableSizeOptions. */
+    class GetSchemaTableSizeOptions implements IGetSchemaTableSizeOptions {
+
+        /**
+         * Constructs a new GetSchemaTableSizeOptions.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: vtadmin.IGetSchemaTableSizeOptions);
+
+        /** GetSchemaTableSizeOptions aggregate_sizes. */
+        public aggregate_sizes: boolean;
+
+        /** GetSchemaTableSizeOptions include_non_serving_shards. */
+        public include_non_serving_shards: boolean;
+
+        /**
+         * Creates a new GetSchemaTableSizeOptions instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns GetSchemaTableSizeOptions instance
+         */
+        public static create(properties?: vtadmin.IGetSchemaTableSizeOptions): vtadmin.GetSchemaTableSizeOptions;
+
+        /**
+         * Encodes the specified GetSchemaTableSizeOptions message. Does not implicitly {@link vtadmin.GetSchemaTableSizeOptions.verify|verify} messages.
+         * @param message GetSchemaTableSizeOptions message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: vtadmin.IGetSchemaTableSizeOptions, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified GetSchemaTableSizeOptions message, length delimited. Does not implicitly {@link vtadmin.GetSchemaTableSizeOptions.verify|verify} messages.
+         * @param message GetSchemaTableSizeOptions message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: vtadmin.IGetSchemaTableSizeOptions, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a GetSchemaTableSizeOptions message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns GetSchemaTableSizeOptions
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): vtadmin.GetSchemaTableSizeOptions;
+
+        /**
+         * Decodes a GetSchemaTableSizeOptions message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns GetSchemaTableSizeOptions
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): vtadmin.GetSchemaTableSizeOptions;
+
+        /**
+         * Verifies a GetSchemaTableSizeOptions message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a GetSchemaTableSizeOptions message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns GetSchemaTableSizeOptions
+         */
+        public static fromObject(object: { [k: string]: any }): vtadmin.GetSchemaTableSizeOptions;
+
+        /**
+         * Creates a plain object from a GetSchemaTableSizeOptions message. Also converts values to other types if specified.
+         * @param message GetSchemaTableSizeOptions
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: vtadmin.GetSchemaTableSizeOptions, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this GetSchemaTableSizeOptions to JSON.
          * @returns JSON object
          */
         public toJSON(): { [k: string]: any };
@@ -27056,6 +27377,12 @@ export namespace vtctldata {
 
         /** GetTabletsRequest cells */
         cells?: (string[]|null);
+
+        /** GetTabletsRequest strict */
+        strict?: (boolean|null);
+
+        /** GetTabletsRequest tablet_aliases */
+        tablet_aliases?: (topodata.ITabletAlias[]|null);
     }
 
     /** Represents a GetTabletsRequest. */
@@ -27075,6 +27402,12 @@ export namespace vtctldata {
 
         /** GetTabletsRequest cells. */
         public cells: string[];
+
+        /** GetTabletsRequest strict. */
+        public strict: boolean;
+
+        /** GetTabletsRequest tablet_aliases. */
+        public tablet_aliases: topodata.ITabletAlias[];
 
         /**
          * Creates a new GetTabletsRequest instance using the specified properties.
@@ -28606,6 +28939,198 @@ export namespace vtctldata {
 
         /**
          * Converts this ReparentTabletResponse to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
+    /** Properties of a ShardReplicationPositionsRequest. */
+    interface IShardReplicationPositionsRequest {
+
+        /** ShardReplicationPositionsRequest keyspace */
+        keyspace?: (string|null);
+
+        /** ShardReplicationPositionsRequest shard */
+        shard?: (string|null);
+    }
+
+    /** Represents a ShardReplicationPositionsRequest. */
+    class ShardReplicationPositionsRequest implements IShardReplicationPositionsRequest {
+
+        /**
+         * Constructs a new ShardReplicationPositionsRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: vtctldata.IShardReplicationPositionsRequest);
+
+        /** ShardReplicationPositionsRequest keyspace. */
+        public keyspace: string;
+
+        /** ShardReplicationPositionsRequest shard. */
+        public shard: string;
+
+        /**
+         * Creates a new ShardReplicationPositionsRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns ShardReplicationPositionsRequest instance
+         */
+        public static create(properties?: vtctldata.IShardReplicationPositionsRequest): vtctldata.ShardReplicationPositionsRequest;
+
+        /**
+         * Encodes the specified ShardReplicationPositionsRequest message. Does not implicitly {@link vtctldata.ShardReplicationPositionsRequest.verify|verify} messages.
+         * @param message ShardReplicationPositionsRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: vtctldata.IShardReplicationPositionsRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified ShardReplicationPositionsRequest message, length delimited. Does not implicitly {@link vtctldata.ShardReplicationPositionsRequest.verify|verify} messages.
+         * @param message ShardReplicationPositionsRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: vtctldata.IShardReplicationPositionsRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a ShardReplicationPositionsRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns ShardReplicationPositionsRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): vtctldata.ShardReplicationPositionsRequest;
+
+        /**
+         * Decodes a ShardReplicationPositionsRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns ShardReplicationPositionsRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): vtctldata.ShardReplicationPositionsRequest;
+
+        /**
+         * Verifies a ShardReplicationPositionsRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a ShardReplicationPositionsRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns ShardReplicationPositionsRequest
+         */
+        public static fromObject(object: { [k: string]: any }): vtctldata.ShardReplicationPositionsRequest;
+
+        /**
+         * Creates a plain object from a ShardReplicationPositionsRequest message. Also converts values to other types if specified.
+         * @param message ShardReplicationPositionsRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: vtctldata.ShardReplicationPositionsRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this ShardReplicationPositionsRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
+    /** Properties of a ShardReplicationPositionsResponse. */
+    interface IShardReplicationPositionsResponse {
+
+        /** ShardReplicationPositionsResponse replication_statuses */
+        replication_statuses?: ({ [k: string]: replicationdata.IStatus }|null);
+
+        /** ShardReplicationPositionsResponse tablet_map */
+        tablet_map?: ({ [k: string]: topodata.ITablet }|null);
+    }
+
+    /** Represents a ShardReplicationPositionsResponse. */
+    class ShardReplicationPositionsResponse implements IShardReplicationPositionsResponse {
+
+        /**
+         * Constructs a new ShardReplicationPositionsResponse.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: vtctldata.IShardReplicationPositionsResponse);
+
+        /** ShardReplicationPositionsResponse replication_statuses. */
+        public replication_statuses: { [k: string]: replicationdata.IStatus };
+
+        /** ShardReplicationPositionsResponse tablet_map. */
+        public tablet_map: { [k: string]: topodata.ITablet };
+
+        /**
+         * Creates a new ShardReplicationPositionsResponse instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns ShardReplicationPositionsResponse instance
+         */
+        public static create(properties?: vtctldata.IShardReplicationPositionsResponse): vtctldata.ShardReplicationPositionsResponse;
+
+        /**
+         * Encodes the specified ShardReplicationPositionsResponse message. Does not implicitly {@link vtctldata.ShardReplicationPositionsResponse.verify|verify} messages.
+         * @param message ShardReplicationPositionsResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: vtctldata.IShardReplicationPositionsResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified ShardReplicationPositionsResponse message, length delimited. Does not implicitly {@link vtctldata.ShardReplicationPositionsResponse.verify|verify} messages.
+         * @param message ShardReplicationPositionsResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: vtctldata.IShardReplicationPositionsResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a ShardReplicationPositionsResponse message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns ShardReplicationPositionsResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): vtctldata.ShardReplicationPositionsResponse;
+
+        /**
+         * Decodes a ShardReplicationPositionsResponse message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns ShardReplicationPositionsResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): vtctldata.ShardReplicationPositionsResponse;
+
+        /**
+         * Verifies a ShardReplicationPositionsResponse message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a ShardReplicationPositionsResponse message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns ShardReplicationPositionsResponse
+         */
+        public static fromObject(object: { [k: string]: any }): vtctldata.ShardReplicationPositionsResponse;
+
+        /**
+         * Creates a plain object from a ShardReplicationPositionsResponse message. Also converts values to other types if specified.
+         * @param message ShardReplicationPositionsResponse
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: vtctldata.ShardReplicationPositionsResponse, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this ShardReplicationPositionsResponse to JSON.
          * @returns JSON object
          */
         public toJSON(): { [k: string]: any };

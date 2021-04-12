@@ -17,19 +17,19 @@ limitations under the License.
 %{
 package sqlparser
 
-func setParseTree(yylex interface{}, stmt Statement) {
+func setParseTree(yylex yyLexer, stmt Statement) {
   yylex.(*Tokenizer).ParseTree = stmt
 }
 
-func setAllowComments(yylex interface{}, allow bool) {
+func setAllowComments(yylex yyLexer, allow bool) {
   yylex.(*Tokenizer).AllowComments = allow
 }
 
-func setDDL(yylex interface{}, node Statement) {
+func setDDL(yylex yyLexer, node Statement) {
   yylex.(*Tokenizer).partialDDL = node
 }
 
-func incNesting(yylex interface{}) bool {
+func incNesting(yylex yyLexer) bool {
   yylex.(*Tokenizer).nesting++
   if yylex.(*Tokenizer).nesting == 200 {
     return true
@@ -37,15 +37,19 @@ func incNesting(yylex interface{}) bool {
   return false
 }
 
-func decNesting(yylex interface{}) {
+func decNesting(yylex yyLexer) {
   yylex.(*Tokenizer).nesting--
 }
 
 // skipToEnd forces the lexer to end prematurely. Not all SQL statements
 // are supported by the Parser, thus calling skipToEnd will make the lexer
 // return EOF early.
-func skipToEnd(yylex interface{}) {
+func skipToEnd(yylex yyLexer) {
   yylex.(*Tokenizer).SkipToEnd = true
+}
+
+func bindVariable(yylex yyLexer, bvar string) {
+  yylex.(*Tokenizer).BindVars[bvar] = struct{}{}
 }
 
 %}
@@ -107,6 +111,8 @@ func skipToEnd(yylex interface{}) {
   tableOption      *TableOption
   columnTypeOptions *ColumnTypeOptions
   constraintDefinition *ConstraintDefinition
+  revertMigration *RevertMigration
+  alterMigration  *AlterMigration
 
   whens         []*When
   columnDefinitions []*ColumnDefinition
@@ -200,6 +206,7 @@ func skipToEnd(yylex interface{}) {
 
 // DDL Tokens
 %token <str> CREATE ALTER DROP RENAME ANALYZE ADD FLUSH CHANGE MODIFY
+%token <str> REVERT
 %token <str> SCHEMA TABLE INDEX VIEW TO IGNORE IF UNIQUE PRIMARY COLUMN SPATIAL FULLTEXT KEY_BLOCK_SIZE CHECK INDEXES
 %token <str> ACTION CASCADE CONSTRAINT FOREIGN NO REFERENCES RESTRICT
 %token <str> SHOW DESCRIBE EXPLAIN DATE ESCAPE REPAIR OPTIMIZE TRUNCATE COALESCE EXCHANGE REBUILD PARTITIONING REMOVE
@@ -207,6 +214,9 @@ func skipToEnd(yylex interface{}) {
 %token <str> VINDEX VINDEXES DIRECTORY NAME UPGRADE
 %token <str> STATUS VARIABLES WARNINGS CASCADED DEFINER OPTION SQL UNDEFINED
 %token <str> SEQUENCE MERGE TEMPORARY TEMPTABLE INVOKER SECURITY FIRST AFTER LAST
+
+// Migration tokens
+%token <str> VITESS_MIGRATION CANCEL RETRY COMPLETE
 
 // Transaction Tokens
 %token <str> BEGIN START TRANSACTION COMMIT ROLLBACK SAVEPOINT RELEASE WORK
@@ -284,6 +294,7 @@ func skipToEnd(yylex interface{}) {
 %type <statement> analyze_statement show_statement use_statement other_statement
 %type <statement> begin_statement commit_statement rollback_statement savepoint_statement release_statement load_statement
 %type <statement> lock_statement unlock_statement call_statement
+%type <statement> revert_statement
 %type <strs> comment_opt comment_list
 %type <str> wild_opt check_option_opt cascade_or_local_opt restrict_or_cascade_opt
 %type <explainType> explain_format_opt
@@ -351,14 +362,14 @@ func skipToEnd(yylex interface{}) {
 %type <str> for_from
 %type <str> default_opt
 %type <ignore> ignore_opt
-%type <str> from_database_opt columns_or_fields extended_opt storage_opt
+%type <str> columns_or_fields extended_opt storage_opt
 %type <showFilter> like_or_where_opt like_opt
 %type <boolean> exists_opt not_exists_opt enforced_opt temp_opt full_opt
 %type <empty> to_opt
 %type <str> reserved_keyword non_reserved_keyword
 %type <colIdent> sql_id reserved_sql_id col_alias as_ci_opt
 %type <expr> charset_value
-%type <tableIdent> table_id reserved_table_id table_alias as_opt_id
+%type <tableIdent> table_id reserved_table_id table_alias as_opt_id table_id_opt from_database_opt
 %type <empty> as_opt work_opt savepoint_opt
 %type <empty> skip_to_end ddl_skip_to_end
 %type <str> charset
@@ -451,6 +462,7 @@ command:
 | lock_statement
 | unlock_statement
 | call_statement
+| revert_statement
 | /*empty*/
 {
   setParseTree(yylex, nil)
@@ -867,9 +879,9 @@ create_index_prefix:
   }
 
 create_database_prefix:
-  CREATE database_or_schema comment_opt not_exists_opt id_or_var
+  CREATE database_or_schema comment_opt not_exists_opt table_id
   {
-    $$ = &CreateDatabase{Comments: Comments($3), DBName: string($5.String()), IfNotExists: $4}
+    $$ = &CreateDatabase{Comments: Comments($3), DBName: $5, IfNotExists: $4}
     setDDL(yylex,$$)
   }
 
@@ -1014,16 +1026,18 @@ column_definition:
 // was specific (as stated in the MySQL guide) and did not accept arbitrary order options. For example NOT NULL DEFAULT 1 and not DEFAULT 1 NOT NULL
 column_type_options:
   {
-    $$ = &ColumnTypeOptions{NotNull: false, Default: nil, OnUpdate: nil, Autoincrement: false, KeyOpt: colKeyNone, Comment: nil}
+    $$ = &ColumnTypeOptions{Null: nil, Default: nil, OnUpdate: nil, Autoincrement: false, KeyOpt: colKeyNone, Comment: nil}
   }
 | column_type_options NULL
   {
-    $1.NotNull = false
+    val := true
+    $1.Null = &val
     $$ = $1
   }
 | column_type_options NOT NULL
   {
-    $1.NotNull = true
+    val := false
+    $1.Null = &val
     $$ = $1
   }
 | column_type_options DEFAULT value_expression
@@ -1534,7 +1548,7 @@ index_column:
 constraint_definition:
   CONSTRAINT id_or_var_opt constraint_info
   {
-    $$ = &ConstraintDefinition{Name: string($2.String()), Details: $3}
+    $$ = &ConstraintDefinition{Name: $2, Details: $3}
   }
 |  constraint_info
   {
@@ -1544,7 +1558,7 @@ constraint_definition:
 check_constraint_definition:
   CONSTRAINT id_or_var_opt check_constraint_info
   {
-    $$ = &ConstraintDefinition{Name: string($2.String()), Details: $3}
+    $$ = &ConstraintDefinition{Name: $2, Details: $3}
   }
 |  check_constraint_info
   {
@@ -1956,7 +1970,7 @@ alter_option:
   }
 | DROP index_or_key id_or_var
   {
-    $$ = &DropKey{Type:NormalKeyType, Name:$3.String()}
+    $$ = &DropKey{Type:NormalKeyType, Name:$3}
   }
 | DROP PRIMARY KEY
   {
@@ -1964,7 +1978,7 @@ alter_option:
   }
 | DROP FOREIGN KEY id_or_var
   {
-    $$ = &DropKey{Type:ForeignKeyType, Name:$4.String()}
+    $$ = &DropKey{Type:ForeignKeyType, Name:$4}
   }
 | FORCE
   {
@@ -1976,7 +1990,7 @@ alter_option:
   }
 | RENAME index_or_key id_or_var TO id_or_var
   {
-    $$ = &RenameIndex{OldName:$3.String(), NewName:$5.String()}
+    $$ = &RenameIndex{OldName:$3, NewName:$5}
   }
 
 alter_commands_modifier_list:
@@ -2058,17 +2072,17 @@ alter_statement:
   {
     $$ = &AlterView{ViewName: $6.ToViewName(), Algorithm:$2, Definer: $3 ,Security:$4, Columns:$7, Select: $9, CheckOption: $10 }
   }
-| alter_database_prefix id_or_var_opt create_options
+| alter_database_prefix table_id_opt create_options
   {
     $1.FullyParsed = true
-    $1.DBName = $2.String()
+    $1.DBName = $2
     $1.AlterOptions = $3
     $$ = $1
   }
-| alter_database_prefix id_or_var UPGRADE DATA DIRECTORY NAME
+| alter_database_prefix table_id UPGRADE DATA DIRECTORY NAME
   {
     $1.FullyParsed = true
-    $1.DBName = $2.String()
+    $1.DBName = $2
     $1.UpdateDataDirectory = true
     $$ = $1
   }
@@ -2138,6 +2152,33 @@ alter_statement:
             Column: $7,
             Sequence: $9,
         },
+    }
+  }
+| ALTER VITESS_MIGRATION STRING RETRY
+  {
+    $$ = &AlterMigration{
+      Type: RetryMigrationType,
+      UUID: string($3),
+    }
+  }
+| ALTER VITESS_MIGRATION STRING COMPLETE
+  {
+    $$ = &AlterMigration{
+      Type: CompleteMigrationType,
+      UUID: string($3),
+    }
+  }
+| ALTER VITESS_MIGRATION STRING CANCEL
+  {
+    $$ = &AlterMigration{
+      Type: CancelMigrationType,
+      UUID: string($3),
+    }
+  }
+| ALTER VITESS_MIGRATION CANCEL ALL
+  {
+    $$ = &AlterMigration{
+      Type: CancelAllMigrationType,
     }
   }
 
@@ -2292,16 +2333,16 @@ drop_statement:
     if $3.Lowered() == "primary" {
       $$ = &AlterTable{Table: $5,AlterOptions: append([]AlterOption{&DropKey{Type:PrimaryKeyType}},$6...)}
     } else {
-      $$ = &AlterTable{Table: $5,AlterOptions: append([]AlterOption{&DropKey{Type:NormalKeyType, Name:$3.String()}},$6...)}
+      $$ = &AlterTable{Table: $5,AlterOptions: append([]AlterOption{&DropKey{Type:NormalKeyType, Name:$3}},$6...)}
     }
   }
 | DROP VIEW exists_opt view_name_list restrict_or_cascade_opt
   {
     $$ = &DropView{FromTables: $4, IfExists: $3}
   }
-| DROP database_or_schema comment_opt exists_opt id_or_var
+| DROP database_or_schema comment_opt exists_opt table_id
   {
-    $$ = &DropDatabase{Comments: Comments($3), DBName: string($5.String()), IfExists: $4}
+    $$ = &DropDatabase{Comments: Comments($3), DBName: $5, IfExists: $4}
   }
 
 truncate_statement:
@@ -2552,15 +2593,15 @@ columns_or_fields:
 from_database_opt:
   /* empty */
   {
-    $$ = ""
+    $$ = NewTableIdent("")
   }
 | FROM table_id
   {
-    $$ = $2.v
+    $$ = $2
   }
 | IN table_id
   {
-    $$ = $2.v
+    $$ = $2
   }
 
 like_or_where_opt:
@@ -2794,6 +2835,12 @@ unlock_statement:
   UNLOCK TABLES
   {
     $$ = &UnlockTables{}
+  }
+
+revert_statement:
+  REVERT VITESS_MIGRATION STRING
+  {
+    $$ = &RevertMigration{UUID: string($3)}
   }
 
 flush_statement:
@@ -3502,6 +3549,7 @@ col_tuple:
 | LIST_ARG
   {
     $$ = ListArg($1)
+    bindVariable(yylex, $1[2:])
   }
 
 subquery:
@@ -3729,47 +3777,51 @@ function_call_keyword:
   {
     $$ = &ValuesFuncExpr{Name: $3}
   }
+| CURRENT_USER func_paren_opt
+  {
+    $$ =  &FuncExpr{Name: NewColIdent($1)}
+  }
 
 /*
   Function calls using non reserved keywords but with special syntax forms.
   Dedicated grammar rules are needed because of the special syntax
 */
 function_call_nonkeyword:
-  CURRENT_TIMESTAMP func_datetime_opt
+  CURRENT_TIMESTAMP func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("current_timestamp")}
   }
-| UTC_TIMESTAMP func_datetime_opt
+| UTC_TIMESTAMP func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("utc_timestamp")}
   }
-| UTC_TIME func_datetime_opt
+| UTC_TIME func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("utc_time")}
   }
 /* doesn't support fsp */
-| UTC_DATE func_datetime_opt
+| UTC_DATE func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("utc_date")}
   }
   // now
-| LOCALTIME func_datetime_opt
+| LOCALTIME func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("localtime")}
   }
   // now
-| LOCALTIMESTAMP func_datetime_opt
+| LOCALTIMESTAMP func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("localtimestamp")}
   }
   // curdate
 /* doesn't support fsp */
-| CURRENT_DATE func_datetime_opt
+| CURRENT_DATE func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("current_date")}
   }
   // curtime
-| CURRENT_TIME func_datetime_opt
+| CURRENT_TIME func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("current_time")}
   }
@@ -3810,7 +3862,7 @@ function_call_nonkeyword:
     $$ = &TimestampFuncExpr{Name:string("timestampdiff"), Unit:$3.String(), Expr1:$5, Expr2:$7}
   }
 
-func_datetime_opt:
+func_paren_opt:
   /* empty */
 | openb closeb
 
@@ -4031,6 +4083,7 @@ value:
 | VALUE_ARG
   {
     $$ = NewArgument($1)
+    bindVariable(yylex, $1[1:])
   }
 | NULL
   {
@@ -4054,6 +4107,7 @@ num_val:
 | VALUE_ARG VALUES
   {
     $$ = NewArgument($1)
+    bindVariable(yylex, $1[1:])
   }
 
 group_by_opt:
@@ -4673,6 +4727,15 @@ table_id:
     $$ = NewTableIdent(string($1))
   }
 
+table_id_opt:
+  {
+    $$ = NewTableIdent("")
+  }
+| table_id
+  {
+    $$ = $1
+  }
+
 reserved_table_id:
   table_id
 | reserved_keyword
@@ -4700,6 +4763,7 @@ reserved_keyword:
 | CASE
 | CALL
 | CHANGE
+| CHARACTER
 | CHECK
 | COLLATE
 | COLUMN
@@ -4849,11 +4913,11 @@ non_reserved_keyword:
 | BOOL
 | BOOLEAN
 | BUCKETS
+| CANCEL
 | CASCADE
 | CASCADED
 | CHANNEL
 | CHAR
-| CHARACTER
 | CHARSET
 | CHECKSUM
 | CLONE
@@ -4865,6 +4929,7 @@ non_reserved_keyword:
 | COMMIT
 | COMMITTED
 | COMPACT
+| COMPLETE
 | COMPONENT
 | COMPRESSED
 | COMPRESSION
@@ -5022,6 +5087,7 @@ non_reserved_keyword:
 | RESPECT
 | RESTART
 | RETAIN
+| RETRY
 | REUSE
 | ROLE
 | ROLLBACK
@@ -5091,6 +5157,7 @@ non_reserved_keyword:
 | VITESS_METADATA
 | VITESS_SHARDS
 | VITESS_TABLETS
+| VITESS_MIGRATION
 | VITESS_MIGRATIONS
 | VSCHEMA
 | WARNINGS

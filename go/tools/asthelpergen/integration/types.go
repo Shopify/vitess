@@ -171,3 +171,10 @@ type NoCloneType struct {
 func (r *NoCloneType) String() string {
 	return fmt.Sprintf("NoClone(%d)", r.v)
 }
+
+type Visit func(node AST) (bool, error)
+
+type application struct {
+	pre, post ApplyFunc
+	cur       Cursor
+}
