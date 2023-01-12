@@ -113,10 +113,10 @@ func KeyRangeAdd(first, second *topodatapb.KeyRange) (*topodatapb.KeyRange, bool
 	if first == nil || second == nil {
 		return nil, false
 	}
-	if len(first.End) != 0 && bytes.Equal(first.End, second.Start) {
+	if len(first.End) != 0 && bytes.Equal(addPadding(first.End), addPadding(second.Start)) {
 		return &topodatapb.KeyRange{Start: first.Start, End: second.End}, true
 	}
-	if len(second.End) != 0 && bytes.Equal(second.End, first.Start) {
+	if len(second.End) != 0 && bytes.Equal(addPadding(second.End), addPadding(first.Start)) {
 		return &topodatapb.KeyRange{Start: second.Start, End: first.End}, true
 	}
 	return nil, false
@@ -127,8 +127,8 @@ func KeyRangeContains(kr *topodatapb.KeyRange, id []byte) bool {
 	if kr == nil {
 		return true
 	}
-	return bytes.Compare(kr.Start, id) <= 0 &&
-		(len(kr.End) == 0 || bytes.Compare(id, kr.End) < 0)
+	return bytes.Compare(addPadding(kr.Start), addPadding(id)) <= 0 &&
+		(len(kr.End) == 0 || bytes.Compare(addPadding(id), addPadding(kr.End)) < 0)
 }
 
 // ParseKeyRangeParts parses a start and end hex values and build a proto KeyRange
@@ -202,7 +202,7 @@ func KeyRangeStartSmaller(left, right *topodatapb.KeyRange) bool {
 	if right == nil {
 		return false
 	}
-	return bytes.Compare(left.Start, right.Start) < 0
+	return bytes.Compare(addPadding(left.Start), addPadding(right.Start)) < 0
 }
 
 // KeyRangeStartEqual returns true if both key ranges have the same start
@@ -250,8 +250,8 @@ func KeyRangesIntersect(first, second *topodatapb.KeyRange) bool {
 	if first == nil || second == nil {
 		return true
 	}
-	return (len(first.End) == 0 || bytes.Compare(second.Start, first.End) < 0) &&
-		(len(second.End) == 0 || bytes.Compare(first.Start, second.End) < 0)
+	return (len(first.End) == 0 || bytes.Compare(addPadding(second.Start), addPadding(first.End)) < 0) &&
+		(len(second.End) == 0 || bytes.Compare(addPadding(first.Start), addPadding(second.End)) < 0)
 }
 
 // KeyRangesOverlap returns the overlap between two KeyRanges.
@@ -270,14 +270,14 @@ func KeyRangesOverlap(first, second *topodatapb.KeyRange) (*topodatapb.KeyRange,
 	// start with (a,b)
 	result := proto.Clone(first).(*topodatapb.KeyRange)
 	// if c > a, then use c
-	if bytes.Compare(second.Start, first.Start) > 0 {
+	if bytes.Compare(addPadding(second.Start), addPadding(first.Start)) > 0 {
 		result.Start = second.Start
 	}
 	// if b is maxed out, or
 	// (d is not maxed out and d < b)
 	//                           ^ valid test as neither b nor d are max
 	// then use d
-	if len(first.End) == 0 || (len(second.End) != 0 && bytes.Compare(second.End, first.End) < 0) {
+	if len(first.End) == 0 || (len(second.End) != 0 && bytes.Compare(addPadding(second.End), addPadding(first.End)) < 0) {
 		result.End = second.End
 	}
 	return result, nil
@@ -297,10 +297,10 @@ func KeyRangeIncludes(big, small *topodatapb.KeyRange) bool {
 		return len(big.Start) == 0 && len(big.End) == 0
 	}
 	// Now we check small.Start >= big.Start, and small.End <= big.End
-	if len(big.Start) != 0 && bytes.Compare(small.Start, big.Start) < 0 {
+	if len(big.Start) != 0 && bytes.Compare(addPadding(small.Start), addPadding(big.Start)) < 0 {
 		return false
 	}
-	if len(big.End) != 0 && (len(small.End) == 0 || bytes.Compare(small.End, big.End) > 0) {
+	if len(big.End) != 0 && (len(small.End) == 0 || bytes.Compare(addPadding(small.End), addPadding(big.End)) > 0) {
 		return false
 	}
 	return true
