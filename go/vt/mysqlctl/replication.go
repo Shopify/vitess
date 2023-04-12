@@ -664,3 +664,12 @@ func (mysqld *Mysqld) SemiSyncReplicationStatus() (bool, error) {
 	}
 	return false, nil
 }
+
+func (mysqld *Mysqld) SemiSyncExtensionLoaded() bool {
+	qr, err := mysqld.FetchSuperQuery(context.TODO(), "SELECT COUNT(*) > 0 AS plugin_loaded FROM information_schema.plugins WHERE plugin_name LIKE 'rpl_semi_sync%'")
+	if err != nil {
+		return false
+	}
+	pluginPresent, _ := qr.Rows[0][0].ToBool()
+	return pluginPresent
+}

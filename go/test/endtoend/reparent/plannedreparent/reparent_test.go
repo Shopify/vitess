@@ -360,6 +360,41 @@ func TestChangeTypeSemiSync(t *testing.T) {
 	utils.CheckDBstatus(ctx, t, rdonly2, "Rpl_semi_sync_slave_status", "ON")
 }
 
+// Tests that ChangeTabletType works even when semi-sync plugins are not loaded.
+func TestChangeTypeWithoutSemiSync(t *testing.T) {
+	defer cluster.PanicHandler(t)
+	clusterInstance := utils.SetupReparentCluster(t, "none")
+	defer utils.TeardownCluster(clusterInstance)
+	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
+
+	ctx := context.Background()
+
+	primary, replica := tablets[0], tablets[1]
+
+	// Unload semi sync plugins
+	for _, tablet := range tablets[0:4] {
+		qr := utils.RunSQL(ctx, t, "select @@global.super_read_only", tablet)
+		result := fmt.Sprintf("%v", qr.Rows[0][0].ToString())
+		if result == "1" {
+			utils.RunSQL(ctx, t, "set global super_read_only = 0", tablet)
+		}
+
+		utils.RunSQL(ctx, t, "UNINSTALL PLUGIN rpl_semi_sync_slave;", tablet)
+		utils.RunSQL(ctx, t, "UNINSTALL PLUGIN rpl_semi_sync_master;", tablet)
+	}
+
+	utils.ValidateTopology(t, clusterInstance, true)
+	utils.CheckPrimaryTablet(t, clusterInstance, primary)
+
+	// Change replica's type to rdonly
+	err := clusterInstance.VtctlclientProcess.ExecuteCommand("ChangeTabletType", replica.Alias, "rdonly")
+	require.NoError(t, err)
+
+	// Change tablets type from rdonly back to replica
+	err = clusterInstance.VtctlclientProcess.ExecuteCommand("ChangeTabletType", replica.Alias, "replica")
+	require.NoError(t, err)
+}
+
 func TestReparentDoesntHangIfPrimaryFails(t *testing.T) {
 	utilstest.SkipIfBinaryIsAboveVersion(t, 15, "vttablet")
 
