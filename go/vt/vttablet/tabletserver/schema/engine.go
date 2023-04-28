@@ -115,7 +115,7 @@ func NewEngine(env tabletenv.Env) *Engine {
 
 		schemazHandler(se.GetSchema(), w, r)
 	})
-	se.historian = newHistorian(env.Config().TrackSchemaVersions, se.conns)
+	se.historian = newHistorian(env.Config().TrackSchemaVersions, env.Config().SchemaVersionMaxAgeSeconds, se.conns)
 	return se
 }
 
