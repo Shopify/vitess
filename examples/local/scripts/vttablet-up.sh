@@ -38,6 +38,7 @@ echo "Starting vttablet for $alias..."
 # shellcheck disable=SC2086
 vttablet \
  $TOPOLOGY_FLAGS \
+ --alsologtostderr \
  --log_dir $VTDATAROOT/tmp \
  --log_queries_to_file $VTDATAROOT/tmp/$tablet_logfile \
  --tablet-path $alias \
@@ -56,6 +57,10 @@ vttablet \
  --pid_file $VTDATAROOT/$tablet_dir/vttablet.pid \
  --vtctld_addr http://$hostname:$vtctld_web_port/ \
  --disable_active_reparents \
+ --table-acl-config=/home/spin/src/github.com/Shopify/vitess/examples/local/vttablet-acl.json \
+ --table-acl-config-reload-interval=5s \
+ --queryserver-config-strict-table-acl=true \
+ --enforce-tableacl-config=true \
  > $VTDATAROOT/$tablet_dir/vttablet.out 2>&1 &
 
 # Block waiting for the tablet to be listening

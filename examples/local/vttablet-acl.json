@@ -1,0 +1,20 @@
+{
+  "table_groups": [
+    {
+      "name": "myacl",
+      "table_names_or_prefixes": [
+        "%"
+      ],
+      "readers": [
+        "mysql_user_ro",
+        "mysql_user_rw"
+      ],
+      "writers": [
+        "mysql_user_rw"
+      ],
+      "admins": [
+        "mysql_user_rw"
+      ]
+    }
+  ]
+}

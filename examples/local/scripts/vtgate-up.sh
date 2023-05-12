@@ -28,6 +28,7 @@ mysql_server_socket_path="/tmp/mysql.sock"
 # shellcheck disable=SC2086
 vtgate \
   $TOPOLOGY_FLAGS \
+  --alsologtostderr \
   --log_dir $VTDATAROOT/tmp \
   --log_queries_to_file $VTDATAROOT/tmp/vtgate_querylog.txt \
   --port $web_port \
@@ -39,7 +40,9 @@ vtgate \
   --tablet_types_to_wait PRIMARY,REPLICA \
   --service_map 'grpc-vtgateservice' \
   --pid_file $VTDATAROOT/tmp/vtgate.pid \
-  --mysql_auth_server_impl none \
+  --mysql_auth_server_impl static \
+  --mysql_auth_server_static_file=/home/spin/src/github.com/Shopify/vitess/examples/local/mysql_auth_server_static_creds.json \
+  --schema_change_signal_user=mysql_user_ro \
   > $VTDATAROOT/tmp/vtgate.out 2>&1 &
 
 # Block waiting for vtgate to be listening

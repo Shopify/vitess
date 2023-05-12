@@ -1,33 +1,20 @@
 {
-  "mysql_user": [
+  "mysql_user_ro": [
     {
-      "MysqlNativePassword": "*9E128DA0C64A6FCCCDCFBDD0FC0A2C967C6DB36F",
-      "Password": "mysql_password",
-      "UserData": "mysql_user"
+      "Password": "asdf",
+      "UserData": "mysql_user_ro"
     }
   ],
-  "mysql_user2": [
+  "mysql_user_rw": [
+    {
+      "Password": "asdf",
+      "UserData": "mysql_user_rw"
+    }
+  ],
+  "mysql_user_forbidden": [
     { 
-      "Password": "mysql_password",
-      "UserData": "mysql_user"
-    }
-  ],
-  "mysql_user3": [
-    {
-      "MysqlNativePassword": "*9E128DA0C64A6FCCCDCFBDD0FC0A2C967C6DB36F",
-      "UserData": "mysql_user"
-    }
-  ],
-  
-  "vt_appdebug": [
-    {
-      "Password": "vtappdebug_password",
-      "UserData": "vt_appdebug"
-    },
-    {
-      "SourceHost": "localhost",
-      "Password": "",
-      "UserData": "vt_appdebug"
+      "Password": "asdf",
+      "UserData": "mysql_user_forbidden"
     }
   ]
 }
