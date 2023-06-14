@@ -4,6 +4,8 @@ on:
   - pull_request
   - push
 
+# Meaningless change to trigger this workflow
+
 jobs:
   build:
     name: Static Code Checks Etc
