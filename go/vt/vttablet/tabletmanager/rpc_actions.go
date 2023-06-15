@@ -82,7 +82,7 @@ func (tm *TabletManager) ChangeType(ctx context.Context, tabletType topodatapb.T
 		return err
 	}
 	defer tm.unlock()
-	return tm.changeTypeLocked(ctx, tabletType, DBActionNone, tm.convertBoolToSemiSyncAction(semiSync))
+	return tm.changeTypeLocked(ctx, tabletType, DBActionNone, convertBoolToSemiSyncAction(semiSync))
 }
 
 // ChangeType changes the tablet type
@@ -142,12 +142,9 @@ func (tm *TabletManager) RunHealthCheck(ctx context.Context) {
 	tm.QueryServiceControl.BroadcastHealth()
 }
 
-func (tm *TabletManager) convertBoolToSemiSyncAction(semiSync bool) SemiSyncAction {
+func convertBoolToSemiSyncAction(semiSync bool) SemiSyncAction {
 	if semiSync {
 		return SemiSyncActionSet
 	}
-	if tm.MysqlDaemon.SemiSyncExtensionLoaded() {
-		return SemiSyncActionUnset
-	}
-	return SemiSyncActionNone
+	return SemiSyncActionUnset
 }

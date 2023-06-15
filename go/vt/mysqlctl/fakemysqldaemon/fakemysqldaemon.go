@@ -643,11 +643,6 @@ func (fmd *FakeMysqlDaemon) SemiSyncClients() uint32 {
 	return 0
 }
 
-// SemiSyncExtensionLoaded is part of the MysqlDaemon interface.
-func (fmd *FakeMysqlDaemon) SemiSyncExtensionLoaded() bool {
-	return true
-}
-
 // SemiSyncSettings is part of the MysqlDaemon interface.
 func (fmd *FakeMysqlDaemon) SemiSyncSettings() (timeout uint64, numReplicas uint32) {
 	return 10000000, 1
