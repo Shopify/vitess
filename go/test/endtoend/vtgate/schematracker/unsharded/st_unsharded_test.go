@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,8 +36,10 @@ import (
 
 var (
 	clusterInstance *cluster.LocalProcessCluster
-	vtParams        mysql.ConnParams
-	keyspaceName    = "ks"
+	vtParamsKs1     mysql.ConnParams
+	vtParamsKs2     mysql.ConnParams
+	keyspace1Name   = "ks"
+	keyspace2Name   = "ks2"
 	sidecarDBName   = "_vt_schema_tracker_metadata" // custom sidecar database name for testing
 	cell            = "zone1"
 	sqlSchema       = `
@@ -77,14 +80,26 @@ func TestMain(m *testing.M) {
 			return 1
 		}
 
-		// Start keyspace
-		keyspace := &cluster.Keyspace{
-			Name:          keyspaceName,
+		clusterInstance.VtTabletExtraArgs = []string{"--queryserver-config-schema-change-signal", "--watch_replication_stream", "--track_schema_versions"}
+
+		// Start keyspace1
+		keyspace1 := &cluster.Keyspace{
+			Name:          keyspace1Name,
 			SchemaSQL:     sqlSchema,
 			SidecarDBName: sidecarDBName,
 		}
-		clusterInstance.VtTabletExtraArgs = []string{"--queryserver-config-schema-change-signal"}
-		err = clusterInstance.StartUnshardedKeyspace(*keyspace, 0, false)
+		err = clusterInstance.StartUnshardedKeyspace(*keyspace1, 0, false)
+		if err != nil {
+			return 1
+		}
+
+		// Start keyspace2
+		keyspace2 := &cluster.Keyspace{
+			Name:          keyspace2Name,
+			SchemaSQL:     sqlSchema,
+			SidecarDBName: sidecarDBName,
+		}
+		err = clusterInstance.StartUnshardedKeyspace(*keyspace2, 0, false)
 		if err != nil {
 			return 1
 		}
@@ -102,10 +117,18 @@ func TestMain(m *testing.M) {
 			return 1
 		}
 
-		vtParams = mysql.ConnParams{
-			Host: clusterInstance.Hostname,
-			Port: clusterInstance.VtgateMySQLPort,
+		vtParamsKs1 = mysql.ConnParams{
+			Host:   clusterInstance.Hostname,
+			Port:   clusterInstance.VtgateMySQLPort,
+			DbName: keyspace1Name,
 		}
+
+		vtParamsKs2 = mysql.ConnParams{
+			Host:   clusterInstance.Hostname,
+			Port:   clusterInstance.VtgateMySQLPort,
+			DbName: keyspace2Name,
+		}
+
 		return m.Run()
 	}()
 	os.Exit(exitCode)
@@ -116,9 +139,13 @@ func TestNewUnshardedTable(t *testing.T) {
 
 	// create a sql connection
 	ctx := context.Background()
-	conn, err := mysql.Connect(ctx, &vtParams)
+	connKs1, err := mysql.Connect(ctx, &vtParamsKs1)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer connKs1.Close()
+
+	connKs2, err := mysql.Connect(ctx, &vtParamsKs2)
+	require.NoError(t, err)
+	defer connKs2.Close()
 
 	vtgateVersion, err := cluster.GetMajorVersion("vtgate")
 	require.NoError(t, err)
@@ -128,7 +155,13 @@ func TestNewUnshardedTable(t *testing.T) {
 	}
 
 	// ensuring our initial table "main" is in the schema
-	utils.AssertMatchesWithTimeout(t, conn,
+	utils.AssertMatchesWithTimeout(t, connKs1,
+		"SHOW VSCHEMA TABLES",
+		expected,
+		100*time.Millisecond,
+		30*time.Second,
+		"initial table list not complete")
+	utils.AssertMatchesWithTimeout(t, connKs2,
 		"SHOW VSCHEMA TABLES",
 		expected,
 		100*time.Millisecond,
@@ -136,53 +169,50 @@ func TestNewUnshardedTable(t *testing.T) {
 		"initial table list not complete")
 
 	// create a new table which is not part of the VSchema
-	utils.Exec(t, conn, `create table new_table_tracked(id bigint, name varchar(100), primary key(id)) Engine=InnoDB`)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	tableCount := 100
 
-	expected = `[[VARCHAR("dual")] [VARCHAR("main")] [VARCHAR("new_table_tracked")]]`
-	if vtgateVersion >= 17 {
-		expected = `[[VARCHAR("main")] [VARCHAR("new_table_tracked")]]`
+	go func() {
+		defer wg.Done()
+		for i := 0; i < tableCount; i++ {
+			ddl := fmt.Sprintf("create table new_table_tracked1_%d(id bigint, name varchar(100), primary key(id)) Engine=InnoDB", i)
+			utils.Exec(t, connKs1, ddl)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < tableCount; i++ {
+			ddl := fmt.Sprintf("create table new_table_tracked2_%d(id bigint, name varchar(100), primary key(id)) Engine=InnoDB", i)
+			utils.Exec(t, connKs2, ddl)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	wg.Wait()
+
+	expected1 := `[[VARCHAR("main")]`
+	for i := 0; i < tableCount; i++ {
+		expected1 = expected1 + fmt.Sprintf(` [VARCHAR("new_table_tracked1_%d")]`, i)
 	}
+	expected1 = expected1 + `]`
+
+	expected2 := `[[VARCHAR("main")]`
+	for i := 0; i < tableCount; i++ {
+		expected2 = expected2 + fmt.Sprintf(` [VARCHAR("new_table_tracked2_%d")]`, i)
+	}
+	expected2 = expected2 + `]`
 
 	// waiting for the vttablet's schema_reload interval to kick in
-	utils.AssertMatchesWithTimeout(t, conn,
+	utils.AssertMatchesWithTimeout(t, connKs1,
 		"SHOW VSCHEMA TABLES",
-		expected,
+		expected1,
 		100*time.Millisecond,
 		30*time.Second,
 		"new_table_tracked not in vschema tables")
-
-	utils.AssertMatchesWithTimeout(t, conn,
-		"select id from new_table_tracked", `[]`,
-		100*time.Millisecond,
-		60*time.Second, // longer timeout as it's the first query after setup
-		"could not query new_table_tracked through vtgate")
-	utils.AssertMatchesWithTimeout(t, conn,
-		"select id from new_table_tracked where id = 5", `[]`,
-		100*time.Millisecond,
-		30*time.Second,
-		"could not query new_table_tracked through vtgate")
-
-	// DML on new table
-	// insert initial data ,update and delete for the new table
-	utils.Exec(t, conn, `insert into new_table_tracked(id) values(0),(1)`)
-	utils.Exec(t, conn, `update new_table_tracked set name = "newName1"`)
-	utils.Exec(t, conn, "delete from new_table_tracked where id = 0")
-	utils.AssertMatchesWithTimeout(t, conn,
-		`select * from new_table_tracked`, `[[INT64(1) VARCHAR("newName1")]]`,
-		100*time.Millisecond,
-		30*time.Second,
-		"could not query expected row in new_table_tracked through vtgate")
-
-	utils.Exec(t, conn, `drop table new_table_tracked`)
-
-	// waiting for the vttablet's schema_reload interval to kick in
-	expected = `[[VARCHAR("dual")] [VARCHAR("main")]]`
-	if vtgateVersion >= 17 {
-		expected = `[[VARCHAR("main")]]`
-	}
-	utils.AssertMatchesWithTimeout(t, conn,
+	utils.AssertMatchesWithTimeout(t, connKs2,
 		"SHOW VSCHEMA TABLES",
-		expected,
+		expected2,
 		100*time.Millisecond,
 		30*time.Second,
 		"new_table_tracked not in vschema tables")

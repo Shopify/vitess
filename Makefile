@@ -87,7 +87,8 @@ endif
 	bash ./build.env
 	# build all the binaries by default with CGO disabled.
 	# Binaries will be placed in ${VTROOTBIN}.
-	CGO_ENABLED=0 go build \
+	CGO_ENABLED=1 go build \
+		    -race \
 		    -trimpath $(EXTRA_BUILD_FLAGS) $(VT_GO_PARALLEL) \
 		    -ldflags "$(shell tools/build_version_flags.sh)" \
 		    -o ${VTROOTBIN} ./go/...
