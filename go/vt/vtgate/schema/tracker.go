@@ -210,7 +210,12 @@ func (t *Tracker) Tables(ks string) map[string][]vindexes.Column {
 		return map[string][]vindexes.Column{} // we know nothing about this KS, so that is the info we can give out
 	}
 
-	return m
+	dup := make(map[string][]vindexes.Column, len(m))
+	for k, v := range m {
+		dup[k] = v
+	}
+
+	return dup
 }
 
 // Views returns all known views in the keyspace with their definition.
@@ -221,7 +226,18 @@ func (t *Tracker) Views(ks string) map[string]sqlparser.SelectStatement {
 	if t.views == nil {
 		return nil
 	}
-	return t.views.m[ks]
+
+	m := t.views.m[ks]
+	if m == nil {
+		return nil
+	}
+
+	dup := make(map[string]sqlparser.SelectStatement, len(m))
+	for k, v := range m {
+		dup[k] = v
+	}
+
+	return dup
 }
 
 func (t *Tracker) updateSchema(th *discovery.TabletHealth) bool {
