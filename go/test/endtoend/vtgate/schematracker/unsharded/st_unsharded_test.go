@@ -176,7 +176,7 @@ func TestNewUnshardedTable(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < tableCount; i++ {
-			ddl := fmt.Sprintf("create table new_table_tracked1_%d(id bigint, name varchar(100), primary key(id)) Engine=InnoDB", i)
+			ddl := fmt.Sprintf("create table new_table_tracked1_%03d(id bigint, name varchar(100), primary key(id)) Engine=InnoDB", i)
 			utils.Exec(t, connKs1, ddl)
 			time.Sleep(1 * time.Second)
 		}
@@ -184,7 +184,7 @@ func TestNewUnshardedTable(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < tableCount; i++ {
-			ddl := fmt.Sprintf("create table new_table_tracked2_%d(id bigint, name varchar(100), primary key(id)) Engine=InnoDB", i)
+			ddl := fmt.Sprintf("create table new_table_tracked2_%03d(id bigint, name varchar(100), primary key(id)) Engine=InnoDB", i)
 			utils.Exec(t, connKs2, ddl)
 			time.Sleep(1 * time.Second)
 		}
@@ -193,13 +193,13 @@ func TestNewUnshardedTable(t *testing.T) {
 
 	expected1 := `[[VARCHAR("main")]`
 	for i := 0; i < tableCount; i++ {
-		expected1 = expected1 + fmt.Sprintf(` [VARCHAR("new_table_tracked1_%d")]`, i)
+		expected1 = expected1 + fmt.Sprintf(` [VARCHAR("new_table_tracked1_%03d")]`, i)
 	}
 	expected1 = expected1 + `]`
 
 	expected2 := `[[VARCHAR("main")]`
 	for i := 0; i < tableCount; i++ {
-		expected2 = expected2 + fmt.Sprintf(` [VARCHAR("new_table_tracked2_%d")]`, i)
+		expected2 = expected2 + fmt.Sprintf(` [VARCHAR("new_table_tracked2_%03d")]`, i)
 	}
 	expected2 = expected2 + `]`
 
