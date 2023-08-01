@@ -116,7 +116,9 @@ require (
 )
 
 require (
+	github.com/MicahParks/keyfunc/v2 v2.1.0
 	github.com/bndr/gotabulate v1.1.2
+	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/hashicorp/go-version v1.6.0
 	golang.org/x/exp v0.0.0-20230811145659-89c5cff77bcb
 	modernc.org/sqlite v1.20.3
