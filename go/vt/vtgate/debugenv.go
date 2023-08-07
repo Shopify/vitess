@@ -88,7 +88,7 @@ type envValue struct {
 }
 
 func debugEnvHandler(vtg *VTGate, w http.ResponseWriter, r *http.Request) {
-	if err := acl.CheckAccessHTTP(r, acl.ADMIN); err != nil {
+	if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_BASIC_AUTH); err != nil {
 		acl.SendError(w, err)
 		return
 	}
