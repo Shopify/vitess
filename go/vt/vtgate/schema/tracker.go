@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/maps"
+
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
 
@@ -175,7 +177,7 @@ func (t *Tracker) Tables(ks string) map[string][]vindexes.Column {
 		return map[string][]vindexes.Column{} // we know nothing about this KS, so that is the info we can give out
 	}
 
-	return m
+	return maps.Clone(m)
 }
 
 func (t *Tracker) updateSchema(th *discovery.TabletHealth) bool {
