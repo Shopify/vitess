@@ -201,7 +201,7 @@ func (sp *statusPage) addStatusSection(banner string, f func() string) {
 }
 
 func (sp *statusPage) statusHandler(w http.ResponseWriter, r *http.Request) {
-	if err := acl.CheckAccessHTTP(r, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(w, err)
 		return
 	}
@@ -250,7 +250,7 @@ func (sp *statusPage) reparse(sections []section) (*template.Template, error) {
 // Toggle the block profile rate to/from 100%, unless specific rate is passed in
 func registerDebugBlockProfileRate() {
 	http.HandleFunc("/debug/blockprofilerate", func(w http.ResponseWriter, r *http.Request) {
-		if err := acl.CheckAccessHTTP(r, acl.DEBUGGING); err != nil {
+		if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 			acl.SendError(w, err)
 			return
 		}
@@ -280,7 +280,7 @@ func registerDebugBlockProfileRate() {
 // Toggle the mutex profiling fraction to/from 100%, unless specific fraction is passed in
 func registerDebugMutexProfileFraction() {
 	http.HandleFunc("/debug/mutexprofilefraction", func(w http.ResponseWriter, r *http.Request) {
-		if err := acl.CheckAccessHTTP(r, acl.DEBUGGING); err != nil {
+		if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 			acl.SendError(w, err)
 			return
 		}

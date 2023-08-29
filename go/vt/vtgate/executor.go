@@ -1104,7 +1104,7 @@ func (e *Executor) debugCacheEntries() (items []cacheItem) {
 
 // ServeHTTP shows the current plans in the query cache.
 func (e *Executor) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}

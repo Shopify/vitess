@@ -621,7 +621,7 @@ func (se *Engine) GetConnection(ctx context.Context) (*connpool.DBConn, error) {
 }
 
 func (se *Engine) handleDebugSchema(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}

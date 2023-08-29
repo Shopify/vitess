@@ -1713,7 +1713,7 @@ func (tsv *TabletServer) healthzHandler(w http.ResponseWriter, r *http.Request) 
 // Returns ok if a query can go all the way to database and back
 func (tsv *TabletServer) registerDebugHealthHandler() {
 	tsv.exporter.HandleFunc("/debug/health", func(w http.ResponseWriter, r *http.Request) {
-		if err := acl.CheckAccessHTTP(r, acl.MONITORING); err != nil {
+		if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 			acl.SendError(w, err)
 			return
 		}

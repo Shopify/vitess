@@ -98,7 +98,7 @@ func init() {
 // querylogzHandler serves a human readable snapshot of the
 // current query log.
 func querylogzHandler(ch chan any, w http.ResponseWriter, r *http.Request) {
-	if err := acl.CheckAccessHTTP(r, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(w, err)
 		return
 	}

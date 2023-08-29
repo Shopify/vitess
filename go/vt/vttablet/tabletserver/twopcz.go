@@ -130,7 +130,7 @@ var (
 )
 
 func twopczHandler(txe *TxExecutor, w http.ResponseWriter, r *http.Request) {
-	if err := acl.CheckAccessHTTP(r, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(w, err)
 		return
 	}

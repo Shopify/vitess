@@ -184,7 +184,7 @@ func (logger *StreamLogger) Name() string {
 // It is safe to register multiple URLs for the same StreamLogger.
 func (logger *StreamLogger) ServeLogs(url string, logf LogFormatter) {
 	http.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
-		if err := acl.CheckAccessHTTP(r, acl.DEBUGGING); err != nil {
+		if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 			acl.SendError(w, err)
 			return
 		}

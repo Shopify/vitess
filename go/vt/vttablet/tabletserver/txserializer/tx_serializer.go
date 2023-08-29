@@ -338,7 +338,7 @@ func (txs *TxSerializer) ServeHTTP(response http.ResponseWriter, request *http.R
 		return
 	}
 
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}

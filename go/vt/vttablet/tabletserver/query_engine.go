@@ -517,7 +517,7 @@ type perQueryStats struct {
 }
 
 func (qe *QueryEngine) handleHTTPQueryPlans(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}
@@ -537,7 +537,7 @@ func (qe *QueryEngine) handleHTTPQueryPlans(response http.ResponseWriter, reques
 }
 
 func (qe *QueryEngine) handleHTTPQueryStats(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}
@@ -563,7 +563,7 @@ func (qe *QueryEngine) handleHTTPQueryStats(response http.ResponseWriter, reques
 }
 
 func (qe *QueryEngine) handleHTTPQueryRules(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}
@@ -579,7 +579,7 @@ func (qe *QueryEngine) handleHTTPQueryRules(response http.ResponseWriter, reques
 }
 
 func (qe *QueryEngine) handleHTTPAclJSON(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}
@@ -601,11 +601,7 @@ func (qe *QueryEngine) handleHTTPAclJSON(response http.ResponseWriter, request *
 
 // ServeHTTP lists the most recent, cached queries and their count.
 func (qe *QueryEngine) handleHTTPConsolidations(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
-		acl.SendError(response, err)
-		return
-	}
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}

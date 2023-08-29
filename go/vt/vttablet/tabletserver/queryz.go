@@ -137,7 +137,7 @@ func (s *queryzSorter) Swap(i, j int)      { s.rows[i], s.rows[j] = s.rows[j], s
 func (s *queryzSorter) Less(i, j int) bool { return s.less(s.rows[i], s.rows[j]) }
 
 func queryzHandler(qe *QueryEngine, w http.ResponseWriter, r *http.Request) {
-	if err := acl.CheckAccessHTTP(r, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(r, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(w, err)
 		return
 	}

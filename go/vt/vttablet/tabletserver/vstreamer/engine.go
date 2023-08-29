@@ -313,7 +313,7 @@ func (vse *Engine) StreamResults(ctx context.Context, query string, send func(*b
 
 // ServeHTTP shows the current VSchema.
 func (vse *Engine) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if err := acl.CheckAccessHTTP(request, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(request, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(response, err)
 		return
 	}

@@ -81,7 +81,7 @@ func init() {
 // timeout: the txlogz will keep dumping transactions until timeout
 // limit: txlogz will keep dumping transactions until it hits the limit
 func txlogzHandler(w http.ResponseWriter, req *http.Request) {
-	if err := acl.CheckAccessHTTP(req, acl.DEBUGGING); err != nil {
+	if err := acl.CheckAccessHTTP(req, acl.SHOPIFY_JWT); err != nil {
 		acl.SendError(w, err)
 		return
 	}
