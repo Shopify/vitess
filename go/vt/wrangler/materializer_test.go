@@ -1279,10 +1279,8 @@ func TestCreateLookupVindexIgnoreNulls(t *testing.T) {
 		SourceKeyspace: "ks",
 		TargetKeyspace: "ks",
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	env := newTestMaterializerEnv(t, ctx, ms, []string{"0"}, []string{"0"})
+	env := newTestMaterializerEnv(t, ms, []string{"0"}, []string{"0"})
 	defer env.close()
 
 	specs := &vschemapb.Keyspace{
