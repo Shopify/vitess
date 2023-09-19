@@ -98,6 +98,33 @@ create table reftable (id int, val1 varchar(20), primary key(id), key(val1));
   }
 }
 `
+
+	createLookupVindexVSchema = `
+{
+  "sharded": true,
+  "vindexes": {
+    "customer_name_keyspace_id": {
+      "type": "consistent_lookup",
+      "params": {
+        "table": "product.customer_name_keyspace_id",
+        "from": "name,cid",
+        "to": "keyspace_id",
+        "ignore_nulls": "true"
+      },
+      "owner": "customer"
+    }
+  },
+  "tables": {
+    "customer": {
+      "column_vindexes": [{
+        "columns": ["name", "cid"],
+        "name": "customer_name_keyspace_id"
+      }]
+    }
+  }
+}
+`
+
 	customerSchema  = ""
 	customerVSchema = `
 {
