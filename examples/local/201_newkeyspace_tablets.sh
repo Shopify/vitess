@@ -32,6 +32,9 @@ for i in ${BASETABLETNUM}00 ${BASETABLETNUM}01 ${BASETABLETNUM}02; do
         SHARD=${SHARD} CELL=zone1 KEYSPACE=${KEYSPACE} TABLET_UID=$i ./scripts/vttablet-up.sh
 done
 
+# set the correct durability policy for the keyspace
+vtctldclient --server localhost:15999 SetKeyspaceDurabilityPolicy --durability-policy=semi_sync ${KEYSPACE}
+
 # Wait for all the tablets to be up and registered in the topology server
 for _ in $(seq 0 200); do
 	vtctldclient GetTablets --keyspace "${KEYSPACE}" --shard "${SHARD}" | wc -l | grep -q "3" && break

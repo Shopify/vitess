@@ -3,6 +3,15 @@
     "vindexes": {
         "hash": {
             "type": "hash"
+        },
+        "corder_keyspace_idx": {
+            "type": "consistent_lookup_unique",
+            "params": {
+                "table": "lookups.corder_keyspace_idx",
+                "from": "order_id",
+                "to": "keyspace_id"
+            },
+            "owner": "corder"
         }
     },
     "tables": {
@@ -23,6 +32,10 @@
                 {
                     "column": "customer_id",
                     "name": "hash"
+                },
+                {
+                    "column": "order_id",
+                    "name": "corder_keyspace_idx"
                 }
             ],
             "auto_increment": {

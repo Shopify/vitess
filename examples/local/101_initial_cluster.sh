@@ -63,11 +63,9 @@ vtctldclient GetTablets --keyspace commerce --shard 0 | grep "primary" || (echo 
 vtctldclient ApplySchema --sql-file create_commerce_schema.sql commerce
 
 # create the vschema
-vtctldclient ApplyVSchema --vschema-file vschema_commerce_initial.json commerce
+vtctldclient ApplyVSchema --vschema-file vschema_commerce_seq.json commerce
 
 # start vtgate
 CELL=zone1 ./scripts/vtgate-up.sh
 
-# start vtadmin
-./scripts/vtadmin-up.sh
 

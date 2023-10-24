@@ -1,0 +1,18 @@
+{
+    "sharded": true,
+    "vindexes": {
+        "hash": {
+            "type": "hash"
+        }
+    },
+    "tables": {
+        "corder_keyspace_idx": {
+            "column_vindexes": [
+                {
+                    "column": "order_id",
+                    "name": "hash"
+                }
+            ]
+        }
+    }
+}

@@ -4,15 +4,8 @@ create table product(
   price bigint,
   primary key(sku)
 ) ENGINE=InnoDB;
-create table customer(
-  customer_id bigint not null auto_increment,
-  email varbinary(128),
-  primary key(customer_id)
-) ENGINE=InnoDB;
-create table corder(
-  order_id bigint not null auto_increment,
-  customer_id bigint,
-  sku varbinary(128),
-  price bigint,
-  primary key(order_id)
-) ENGINE=InnoDB;
+
+create table customer_seq(id int, next_id bigint, cache bigint, primary key(id)) comment 'vitess_sequence';
+insert into customer_seq(id, next_id, cache) values(0, 1000, 100);
+create table order_seq(id int, next_id bigint, cache bigint, primary key(id)) comment 'vitess_sequence';
+insert into order_seq(id, next_id, cache) values(0, 1000, 100);
