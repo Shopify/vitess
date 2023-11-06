@@ -887,6 +887,11 @@ func (cluster *LocalProcessCluster) vtctlclientGetTablet(tablet *Vttablet) (*top
 	return &ti, nil
 }
 
+func (cluster *LocalProcessCluster) VtctlclientChangeTabletType(tablet *Vttablet, tabletType topodatapb.TabletType) error {
+	_, err := cluster.VtctlclientProcess.ExecuteCommandWithOutput("ChangeTabletType", "--", tablet.Alias, tabletType.String())
+	return err
+}
+
 // Teardown brings down the cluster by invoking teardown for individual processes
 func (cluster *LocalProcessCluster) Teardown() {
 	PanicHandler(nil)
