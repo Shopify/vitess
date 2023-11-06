@@ -35,6 +35,7 @@ import (
 	"vitess.io/vitess/go/test/endtoend/cluster"
 	"vitess.io/vitess/go/test/endtoend/utils"
 	vtorcutils "vitess.io/vitess/go/test/endtoend/vtorc/utils"
+	"vitess.io/vitess/go/vt/proto/topodata"
 )
 
 func TestVtgateHealthCheck(t *testing.T) {
@@ -98,6 +99,34 @@ func TestVtgateReplicationStatusCheck(t *testing.T) {
 	rawLag := res.Named().Rows[0]["ReplicationLag"] // Let's just look at the first row
 	lagInt, _ := rawLag.ToInt64()                   // Don't check the error as the value could be "NULL"
 	assert.True(t, rawLag.IsNull() || lagInt > 0, "replication lag should be NULL or greater than 0 but was: %s", rawLag.ToString())
+}
+
+func TestVtgateReplicationStatusCheckWithTabletTypeChange(t *testing.T) {
+	defer cluster.PanicHandler(t)
+	// Healthcheck interval on tablet is set to 1s, so sleep for 2s
+	time.Sleep(2 * time.Second)
+	verifyVtgateVariables(t, clusterInstance.VtgateProcess.VerifyURL)
+	ctx := context.Background()
+	conn, err := mysql.Connect(ctx, &vtParams)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Only returns rows for REPLICA and RDONLY tablets -- so should be 2 of them
+	qr := utils.Exec(t, conn, "show vitess_replication_status like '%'")
+	expectNumRows := 2
+	numRows := len(qr.Rows)
+	assert.Equal(t, expectNumRows, numRows, fmt.Sprintf("wrong number of results from show vitess_replication_status. Expected %d, got %d", expectNumRows, numRows))
+
+	// change the RDONLY tablet to SPARE
+	rdOnlyTablet := clusterInstance.Keyspaces[0].Shards[0].Rdonly()
+	err = clusterInstance.VtctlclientChangeTabletType(rdOnlyTablet, topodata.TabletType_SPARE)
+	require.NoError(t, err)
+
+	// Only returns rows for REPLICA and RDONLY tablets -- so should be 1 of them since we updated 1 to spare
+	qr = utils.Exec(t, conn, "show vitess_replication_status like '%'")
+	expectNumRows = 1
+	numRows = len(qr.Rows)
+	assert.Equal(t, expectNumRows, numRows, fmt.Sprintf("wrong number of results from show vitess_replication_status. Expected %d, got %d", expectNumRows, numRows))
 }
 
 func verifyVtgateVariables(t *testing.T, url string) {
