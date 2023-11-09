@@ -1,0 +1,19 @@
+{
+  "table_groups": [
+    {
+      "name": "all-tables",
+      "table_names_or_prefixes": [
+        "%"
+      ],
+      "admins": [
+        "mysql_user"
+      ],
+      "readers": [
+        "mysql_user"
+      ],
+      "writers": [
+        "mysql_user"
+      ]
+    }
+  ]
+}

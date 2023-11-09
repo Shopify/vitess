@@ -39,7 +39,10 @@ vtgate \
   --tablet_types_to_wait PRIMARY,REPLICA \
   --service_map 'grpc-vtgateservice' \
   --pid_file $VTDATAROOT/tmp/vtgate.pid \
-  --mysql_auth_server_impl none \
+  --mysql_auth_server_impl static \
+  --mysql_auth_server_static_file /home/spin/src/github.com/Shopify/vitess/examples/local/mysql_auth_server_static_creds.json \
+  --mysql_auth_static_reload_interval 5s \
+  --schema_change_signal_user mysql_user \
   > $VTDATAROOT/tmp/vtgate.out 2>&1 &
 
 # Block waiting for vtgate to be listening
