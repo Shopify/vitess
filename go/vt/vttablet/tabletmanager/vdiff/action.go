@@ -190,7 +190,7 @@ func (vde *Engine) handleCreateResumeAction(ctx context.Context, dbClient binlog
 		}
 		resp.Id = int64(qr.InsertID)
 	} else {
-		query := fmt.Sprintf(sqlResumeVDiff, encodeString(string(optionsJSON)), encodeString(req.VdiffUuid))
+		query := fmt.Sprintf(sqlResumeVDiff, encodeString(req.VdiffUuid))
 		if qr, err = dbClient.ExecuteFetch(query, 1); err != nil {
 			return err
 		}
