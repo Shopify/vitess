@@ -95,11 +95,11 @@ vtctldclient ApplySchema --sql '
 mysql --user mysql_user --password
 ```
 * Insert some data
-```sql
+```
 USE things;
 INSERT INTO things (id, name) VALUES (1, "foo"), (2, "bar");
 
-mysql> select * from things;
+select * from things;
 +----+------+
 | id | name |
 +----+------+
@@ -108,7 +108,7 @@ mysql> select * from things;
 +----+------+
 2 rows in set (0.00 sec)
 
-mysql> select * from things_name_lookup;
+select * from things_name_lookup;
 +------+--------------------------+
 | name | keyspace_id              |
 +------+--------------------------+
@@ -117,6 +117,14 @@ mysql> select * from things_name_lookup;
 +------+--------------------------+
 2 rows in set (0.00 sec)
 
-mysql> INSERT INTO things (id, name) VALUES (3, "bar");
+INSERT INTO things (id, name) VALUES (3, "bar");
 ERROR 1045 (28000): transaction rolled back to reverse changes of partial DML execution: target: things.-80.primary: vttablet: missing caller id
+```
+
+* Update `go/vt/vtgate/vindexes/consistent_lookup.go` line 364 to pass `ctx`
+* Rebuild, restart vtgate, and try again
+```
+mysql> INSERT INTO things (id, name) VALUES (3, "bar");
+ERROR 1062 (23000): transaction rolled back to reverse changes of partial DML execution: lookup.Create: Code: ALREADY_EXISTS
+vttablet: Duplicate entry 'bar' for key 'things_name_lookup.PRIMARY' (errno 1062) (sqlstate 23000) (CallerID: mysql_user): Sql: "insert into things_name_lookup(`name`, keyspace_id) values (:_name_0, :keyspace_id_0)", BindVars: {_name_0: "type:VARCHAR value:\"bar\""keyspace_id_0: "type:VARBINARY value:\"N\\xb1\\x90ɢ\\xfa\\x16\\x9c\""name_0: "type:VARCHAR value:\"bar\""}
 ```
