@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"vitess.io/vitess/go/vt/topo/topoproto"
 	"vitess.io/vitess/go/vt/vterrors"
@@ -49,6 +50,12 @@ const (
 var (
 	Actions    = []VDiffAction{CreateAction, ShowAction, StopAction, ResumeAction, DeleteAction}
 	ActionArgs = []string{AllActionArg, LastActionArg}
+
+	optionsZeroVal = &tabletmanagerdatapb.VDiffOptions{
+		PickerOptions: &tabletmanagerdatapb.VDiffPickerOptions{},
+		CoreOptions:   &tabletmanagerdatapb.VDiffCoreOptions{},
+		ReportOptions: &tabletmanagerdatapb.VDiffReportOptions{},
+	}
 )
 
 func (vde *Engine) PerformVDiffAction(ctx context.Context, req *tabletmanagerdatapb.VDiffRequest) (*tabletmanagerdatapb.VDiffResponse, error) {
@@ -209,9 +216,24 @@ func (vde *Engine) handleCreateResumeAction(ctx context.Context, dbClient binlog
 	if err != nil {
 		return err
 	}
+
+	vdiffRecord := qr.Named().Row()
+	if vdiffRecord == nil {
+		return fmt.Errorf("unable to %s vdiff for UUID %s as it was not found on tablet %v (%w)",
+			action, req.VdiffUuid, vde.thisTablet.Alias, err)
+	}
+	if action == ResumeAction {
+		// Use the existing options from the vdiff record.
+		options = optionsZeroVal
+		err = protojson.Unmarshal(vdiffRecord.AsBytes("options", []byte("{}")), options)
+		if err != nil {
+			return err
+		}
+	}
+
 	vde.mu.Lock()
 	defer vde.mu.Unlock()
-	if err := vde.addController(qr.Named().Row(), options); err != nil {
+	if err := vde.addController(vdiffRecord, options); err != nil {
 		return err
 	}
 
