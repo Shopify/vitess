@@ -56,6 +56,10 @@ vttablet \
  --heartbeat_enable \
  --heartbeat_interval=250ms \
  --heartbeat_on_demand_duration=5s \
+ --enforce-tableacl-config \
+ --table-acl-config-reload-interval 5s \
+ --queryserver-config-strict-table-acl \
+ --table-acl-config "$(dirname "${BASH_SOURCE[0]:-$0}")/../../local/table_acl.json" \
  > $VTDATAROOT/$tablet_dir/vttablet.out 2>&1 &
 
 # Block waiting for the tablet to be listening

@@ -40,7 +40,9 @@ vtgate \
   --service_map 'grpc-vtgateservice' \
   --pid_file $VTDATAROOT/tmp/vtgate.pid \
   --enable_buffer \
-  --mysql_auth_server_impl none \
+  --mysql_auth_server_impl static \
+  --mysql_auth_server_static_file "$(dirname "${BASH_SOURCE[0]:-$0}")/../../local/mysql_auth_server_static_creds.json" \
+  --mysql_auth_static_reload_interval 5s \
   > $VTDATAROOT/tmp/vtgate.out 2>&1 &
 
 # Block waiting for vtgate to be listening
