@@ -1,6 +1,44 @@
-Setup
-======
-* `SKIP_VTADMIN=true ./101_initial_cluster.sh`
+In examples/local
+==================
+* Create a `table_acl.json` file
+```bash
+echo '{
+  "table_groups": [
+    {
+      "name": "all-tables",
+      "table_names_or_prefixes": [
+        "%"
+      ],
+      "admins": [
+        "mysql_user"
+      ],
+      "readers": [
+        "mysql_user"
+      ],
+      "writers": [
+        "mysql_user"
+      ]
+    }
+  ]
+}' > table_acl.json
+```
+* Add authentication flags to `examples/common/scripts/vtgate-up.sh`
+```
+  --mysql_auth_server_impl static \
+  --mysql_auth_server_static_file "$(dirname "${BASH_SOURCE[0]:-$0}")/../../local/mysql_auth_server_static_creds.json" \
+  --mysql_auth_static_reload_interval 5s \
+```
+* Add strict ACL enforcement flags to `examples/common/scripts/vttablet-up.sh`
+```
+ --enforce-tableacl-config \
+ --table-acl-config-reload-interval 5s \
+ --queryserver-config-strict-table-acl \
+ --table-acl-config "$(dirname "${BASH_SOURCE[0]:-$0}")/../../local/table_acl.json" \
+```
+* Start the cluster
+```bash
+SKIP_VTADMIN=true ./101_initial_cluster.sh
+```
 * Create a new sharded "things" keyspace:
 ```bash
 source ../common/env.sh
@@ -30,8 +68,8 @@ vtctldclient ApplyVSchema --vschema '
     {
         "sharded": true,
         "vindexes": {
-            "hash": {
-                "type": "hash"
+            "xxhash": {
+                "type": "xxhash"
             },
             "unicode_loose_md5": {
                 "type": "unicode_loose_md5"
@@ -50,8 +88,8 @@ vtctldclient ApplyVSchema --vschema '
             "things": {
                 "column_vindexes": [
                     {
-                        "column": "id",
-                        "name": "hash"
+                        "column": "uuid",
+                        "name": "xxhash"
                     },
                     {
                         "column": "name",
@@ -75,9 +113,9 @@ vtctldclient ApplyVSchema --vschema '
 ```bash
 vtctldclient ApplySchema --sql '
   CREATE TABLE things (
-    id BIGINT NOT NULL,
+    uuid VARCHAR(36) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    PRIMARY KEY (id),
+    PRIMARY KEY (uuid),
     UNIQUE (name)
   ) ENGINE=InnoDB;
 
@@ -96,33 +134,36 @@ mysql --user mysql_user --password
 ```
 mysql> USE things;
 
-mysql> INSERT INTO things (id, name) VALUES (1, "foo"), (2, "bar");
+mysql> INSERT INTO things (uuid, name) VALUES (UUID(), "foo"), (UUID(), "bar");
 
-mysql> select * from things;
-+----+------+
-| id | name |
-+----+------+
-|  2 | bar  |
-|  1 | foo  |
-+----+------+
+mysql> SELECT * FROM things;
++--------------------------------------+------+
+| uuid                                 | name |
++--------------------------------------+------+
+| c9beff6d-8fe4-11ee-9f69-4201f31b044a | bar  |
+| c9beff2a-8fe4-11ee-9f69-4201f31b044a | foo  |
++--------------------------------------+------+
 
-mysql> select * from things_name_lookup;
+mysql> SELECT * FROM things_name_lookup;
 +------+--------------------------+
 | name | keyspace_id              |
 +------+--------------------------+
-| bar  | 0x06E7EA22CE92708F       |
-| foo  | 0x166B40B44ABA4BD6       |
+| foo  | 0xFEBD7FC7483D91F0       |
+| bar  | 0x3043FD669C06B406       |
 +------+--------------------------+
+2 rows in set (0.00 sec)
 ```
 * Try to insert a duplicate row
 ```
-mysql> INSERT INTO things (id, name) VALUES (3, "bar");
-ERROR 1045 (28000): transaction rolled back to reverse changes of partial DML execution: target: things.-80.primary: vttablet: missing caller id```
+mysql> INSERT INTO things (uuid, name) VALUES (UUID(), "bar");
+ERROR 1045 (28000): transaction rolled back to reverse changes of partial DML execution: target: things.-80.primary: vttablet: missing caller id
 ```
 * Update `go/vt/vtgate/vindexes/consistent_lookup.go` `handleDup` function to pass `ctx` instead of `context.Background()`
 * Rebuild, restart vtgate, and try again
 ```
-mysql> INSERT INTO things (id, name) VALUES (3, "bar");
+mysql> INSERT INTO things (uuid, name) VALUES (UUID(), "bar");
 ERROR 1062 (23000): transaction rolled back to reverse changes of partial DML execution: lookup.Create: Code: ALREADY_EXISTS
-vttablet: Duplicate entry 'bar' for key 'things_name_lookup.PRIMARY' (errno 1062) (sqlstate 23000) (CallerID: mysql_user): Sql: "insert into things_name_lookup(`name`, keyspace_id) values (:_name_0, :keyspace_id_0)", BindVars: {_name_0: "type:VARCHAR value:\"bar\""keyspace_id_0: "type:VARBINARY value:\"N\\xb1\\x90ɢ\\xfa\\x16\\x9c\""name_0: "type:VARCHAR value:\"bar\""}
+vttablet: Duplicate entry 'bar' for key 'things_name_lookup.PRIMARY' (errno 1062) (sqlstate 23000) (CallerID: mysql_user): Sql: "insert into things_name_lookup(`name`, keyspace_id) values (:_name_0, :keyspace_id_0)", BindVars: {_name_0: "type:VARCHAR value:\"bar\""keyspace_id_0: "type:VARBINARY value:\"\\x89W\\x9e\\xb4\\xdc\\xfb\\n\\xf0\""}
+
+target: things.80-.primary
 ```
