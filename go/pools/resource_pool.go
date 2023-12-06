@@ -27,6 +27,7 @@ import (
 
 	"vitess.io/vitess/go/sync2"
 	"vitess.io/vitess/go/timer"
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/vterrors"
 
@@ -252,6 +253,9 @@ func (rp *ResourcePool) reopen() {
 // it will wait till the next resource becomes available or a timeout.
 // A timeout of 0 is an indefinite wait.
 func (rp *ResourcePool) Get(ctx context.Context, setting *Setting) (resource Resource, err error) {
+	span, ctx := trace.NewSpan(ctx, "ResourcePool.Get")
+	defer span.Finish()
+
 	// If ctx has already expired, avoid racing with rp's resource channel.
 	if ctx.Err() != nil {
 		return nil, ErrCtxTimeout
@@ -263,6 +267,9 @@ func (rp *ResourcePool) Get(ctx context.Context, setting *Setting) (resource Res
 }
 
 func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) {
+	span, ctx := trace.NewSpan(ctx, "ResourcePool.get")
+	defer span.Finish()
+
 	rp.getCount.Add(1)
 	// Fetch
 	var wrapper resourceWrapper
@@ -322,6 +329,9 @@ func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) 
 }
 
 func (rp *ResourcePool) getWithSettings(ctx context.Context, setting *Setting) (Resource, error) {
+	span, ctx := trace.NewSpan(ctx, "ResourcePool.getWithSettings")
+	defer span.Finish()
+
 	rp.getSettingCount.Add(1)
 	var wrapper resourceWrapper
 	var ok bool
