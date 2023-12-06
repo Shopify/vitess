@@ -109,6 +109,9 @@ func NewPool(env tabletenv.Env, name string, cfg tabletenv.ConnPoolConfig) *Pool
 }
 
 func (cp *Pool) pool() (p pools.IResourcePool) {
+	span, _ := trace.NewSpan(context.Background(), "Pool.pool")
+	defer span.Finish()
+
 	cp.mu.Lock()
 	p = cp.connections
 	cp.mu.Unlock()
