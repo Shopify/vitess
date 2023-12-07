@@ -249,7 +249,7 @@ func (c *Conn) clientHandshake(ctx context.Context, params *ConnParams) error {
 
 	// Handle switch to SSL if necessary.
 	if params.SslEnabled() {
-		spanSslEnabled, ctx := trace.NewSpan(ctx, "Conn.clientHandshake.spanSslEnabled")
+		spanSslEnabled, _ := trace.NewSpan(ctx, "Conn.clientHandshake.spanSslEnabled")
 		// If client asked for SSL, but server doesn't support it,
 		// stop right here.
 		if params.SslRequired() && capabilities&CapabilityClientSSL == 0 {
