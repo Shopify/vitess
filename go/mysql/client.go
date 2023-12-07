@@ -119,7 +119,7 @@ func Connect(ctx context.Context, params *ConnParams) (*Conn, error) {
 		// make any read or write just return with an error
 		// right away.
 		status <- connectResult{
-			err: c.clientHandshake(params),
+			err: c.clientHandshake(ctx, params),
 		}
 	}()
 
@@ -201,8 +201,8 @@ func (c *Conn) Ping() error {
 // clientHandshake handles the client side of the handshake.
 // Note the connection can be closed while this is running.
 // Returns a SQLError.
-func (c *Conn) clientHandshake(params *ConnParams) error {
-	span, _ := trace.NewSpan(context.TODO(), "Conn.clientHandshake")
+func (c *Conn) clientHandshake(ctx context.Context, params *ConnParams) error {
+	span, ctx := trace.NewSpan(ctx, "Conn.clientHandshake")
 	defer span.Finish()
 
 	// if EnableQueryInfo is set, make sure that all queries starting with the handshake
@@ -212,11 +212,16 @@ func (c *Conn) clientHandshake(params *ConnParams) error {
 	}
 
 	// Wait for the server initial handshake packet, and parse it.
+	spanReadPacket, ctx := trace.NewSpan(ctx, "Conn.clientHandshake.readPackage")
 	data, err := c.readPacket()
+	spanReadPacket.Finish()
 	if err != nil {
 		return NewSQLError(CRServerLost, "", "initial packet read failed: %v", err)
 	}
+
+	spanParseHandshakePakcet, ctx := trace.NewSpan(ctx, "Conn.clientHandshake.parseInitialHandshakePacket")
 	capabilities, salt, err := c.parseInitialHandshakePacket(data)
+	spanParseHandshakePakcet.Finish()
 	if err != nil {
 		return err
 	}
@@ -235,13 +240,16 @@ func (c *Conn) clientHandshake(params *ConnParams) error {
 		c.Capabilities = capabilities & (CapabilityClientDeprecateEOF)
 	}
 
+	spanParseConnCharset, ctx := trace.NewSpan(ctx, "Conn.clientHandshake.ParseConnectionCharset")
 	charset, err := collations.Local().ParseConnectionCharset(params.Charset)
+	spanParseConnCharset.Finish()
 	if err != nil {
 		return err
 	}
 
 	// Handle switch to SSL if necessary.
 	if params.SslEnabled() {
+		spanSslEnabled, ctx := trace.NewSpan(ctx, "Conn.clientHandshake.spanSslEnabled")
 		// If client asked for SSL, but server doesn't support it,
 		// stop right here.
 		if params.SslRequired() && capabilities&CapabilityClientSSL == 0 {
@@ -285,6 +293,8 @@ func (c *Conn) clientHandshake(params *ConnParams) error {
 		c.conn = conn
 		c.bufferedReader.Reset(conn)
 		c.Capabilities |= CapabilityClientSSL
+
+		spanSslEnabled.Finish()
 	}
 
 	// Password encryption.
@@ -320,6 +330,8 @@ func (c *Conn) clientHandshake(params *ConnParams) error {
 	// If the server didn't support DbName in its handshake, set
 	// it now. This is what the 'mysql' client does.
 	if capabilities&CapabilityClientConnectWithDB == 0 && params.DbName != "" {
+		spanWriteDbName, _ := trace.NewSpan(ctx, "Conn.clientHandshake.spanWriteDbName")
+		defer spanWriteDbName.Finish()
 		// Write the packet.
 		if err := c.writeComInitDB(params.DbName); err != nil {
 			return err
