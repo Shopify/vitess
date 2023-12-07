@@ -22,6 +22,7 @@ import (
 
 	"vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/dbconfigs"
 )
 
@@ -35,6 +36,9 @@ type DBConnection struct {
 // NewDBConnection returns a new DBConnection based on the ConnParams
 // and will use the provided stats to collect timing.
 func NewDBConnection(ctx context.Context, info dbconfigs.Connector) (*DBConnection, error) {
+	span, ctx := trace.NewSpan(ctx, "connection.NewDBConnection")
+	defer span.Finish()
+
 	c, err := info.Connect(ctx)
 	if err != nil {
 		return nil, err

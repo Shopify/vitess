@@ -109,7 +109,7 @@ func NewPool(env tabletenv.Env, name string, cfg tabletenv.ConnPoolConfig) *Pool
 }
 
 func (cp *Pool) pool() (p pools.IResourcePool) {
-	span, _ := trace.NewSpan(context.Background(), "Pool.pool")
+	span, _ := trace.NewSpan(context.TODO(), "Pool.pool")
 	defer span.Finish()
 
 	cp.mu.Lock()
@@ -129,6 +129,9 @@ func (cp *Pool) Open(appParams, dbaParams, appDebugParams dbconfigs.Connector) {
 	}
 
 	f := func(ctx context.Context) (pools.Resource, error) {
+		span, ctx := trace.NewSpan(ctx, "ResourcePool.factory")
+		defer span.Finish()
+
 		return NewDBConn(ctx, cp, appParams)
 	}
 

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"vitess.io/vitess/go/mysql/collations"
+	"vitess.io/vitess/go/trace"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vttls"
@@ -47,6 +48,9 @@ type connectResult struct {
 // FIXME(alainjobart) once we have more of a server side, add test cases
 // to cover all failure scenarios.
 func Connect(ctx context.Context, params *ConnParams) (*Conn, error) {
+	span, ctx := trace.NewSpan(ctx, "mysql.Connect")
+	defer span.Finish()
+
 	if params.ConnectTimeoutMs != 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(params.ConnectTimeoutMs)*time.Millisecond)
@@ -198,6 +202,9 @@ func (c *Conn) Ping() error {
 // Note the connection can be closed while this is running.
 // Returns a SQLError.
 func (c *Conn) clientHandshake(params *ConnParams) error {
+	span, _ := trace.NewSpan(context.TODO(), "Conn.clientHandshake")
+	defer span.Finish()
+
 	// if EnableQueryInfo is set, make sure that all queries starting with the handshake
 	// will actually process the INFO fields in QUERY_OK packets
 	if params.EnableQueryInfo {

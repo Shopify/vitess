@@ -66,6 +66,9 @@ func NewDBConn(ctx context.Context, cp *Pool, appParams dbconfigs.Connector) (*D
 	start := time.Now()
 	defer cp.env.Stats().MySQLTimings.Record("Connect", start)
 
+	span, ctx := trace.NewSpan(ctx, "dbconn.NewDBConn")
+	defer span.Finish()
+
 	c, err := dbconnpool.NewDBConnection(ctx, appParams)
 	if err != nil {
 		cp.env.Stats().MySQLTimings.Record("ConnectError", start)

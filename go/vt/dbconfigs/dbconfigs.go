@@ -26,6 +26,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/servenv"
 	"vitess.io/vitess/go/vt/vttls"
 
@@ -172,6 +173,9 @@ func New(mcp *mysql.ConnParams) Connector {
 
 // Connect will invoke the mysql.connect method and return a connection
 func (c *Connector) Connect(ctx context.Context) (*mysql.Conn, error) {
+	span, ctx := trace.NewSpan(ctx, "Connector.Connect")
+	defer span.Finish()
+
 	params, err := c.MysqlParams()
 	if err != nil {
 		return nil, err
