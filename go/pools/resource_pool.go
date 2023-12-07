@@ -302,6 +302,7 @@ func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) 
 
 	// if the resource has setting applied, we will close it and return a new one
 	if wrapper.resource != nil && wrapper.resource.IsSettingApplied() {
+		spanClose, ctx := trace.NewSpan(ctx, "ResourcePool.settingAppliedClose")
 		rp.resetSettingCount.Add(1)
 		err = wrapper.resource.ResetSetting(ctx)
 		if err != nil {
@@ -310,16 +311,19 @@ func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) 
 			wrapper.resource = nil
 			rp.active.Add(-1)
 		}
+		spanClose.Finish()
 	}
 
 	// Unwrap
 	if wrapper.resource == nil {
+		spanFactory, ctx := trace.NewSpan(ctx, "ResourcePool.wrapperNil")
 		wrapper.resource, err = rp.factory(ctx)
 		if err != nil {
 			rp.resources <- resourceWrapper{}
 			return nil, err
 		}
 		rp.active.Add(1)
+		spanFactory.Finish()
 	}
 	if rp.available.Add(-1) <= 0 {
 		rp.exhausted.Add(1)
