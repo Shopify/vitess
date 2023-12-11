@@ -157,6 +157,8 @@ func (dbc *DBConn) Exec(ctx context.Context, query string, maxrows int, wantfiel
 }
 
 func (dbc *DBConn) execOnce(ctx context.Context, query string, maxrows int, wantfields bool) (*sqltypes.Result, error) {
+	span, ctx := trace.NewSpan(ctx, "DBConn.execOnce")
+	defer span.Finish()
 	dbc.current.Set(query)
 	defer dbc.current.Set("")
 
@@ -185,6 +187,8 @@ func (dbc *DBConn) execOnce(ctx context.Context, query string, maxrows int, want
 
 // ExecOnce executes the specified query, but does not retry on connection errors.
 func (dbc *DBConn) ExecOnce(ctx context.Context, query string, maxrows int, wantfields bool) (*sqltypes.Result, error) {
+	span, ctx := trace.NewSpan(ctx, "DBConn.ExecOnce")
+	defer span.Finish()
 	return dbc.execOnce(ctx, query, maxrows, wantfields)
 }
 

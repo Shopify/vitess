@@ -20,6 +20,7 @@ import (
 	"context"
 	"time"
 
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/vtgate/logstats"
 
 	"vitess.io/vitess/go/sqltypes"
@@ -42,6 +43,9 @@ func (e *Executor) newExecute(
 	execPlan planExec, // used when there is a plan to execute
 	recResult txResult, // used when it's something simple like begin/commit/rollback/savepoint
 ) error {
+	span, ctx := trace.NewSpan(ctx, "Executor.newExecute")
+	defer span.Finish()
+
 	// 1: Prepare before planning and execution
 
 	// Start an implicit transaction if necessary.
@@ -105,6 +109,8 @@ func (e *Executor) newExecute(
 
 // handleTransactions deals with transactional queries: begin, commit, rollback and savepoint management
 func (e *Executor) handleTransactions(ctx context.Context, safeSession *SafeSession, plan *engine.Plan, logStats *logstats.LogStats, vcursor *vcursorImpl) (*sqltypes.Result, error) {
+	span, ctx := trace.NewSpan(ctx, "Executor.handleTransactions")
+	defer span.Finish()
 	// We need to explicitly handle errors, and begin/commit/rollback, since these control transactions. Everything else
 	// will fall through and be handled through planning
 	switch plan.Type {
@@ -199,6 +205,9 @@ func (e *Executor) executePlan(
 	logStats *logstats.LogStats,
 	execStart time.Time,
 ) (*sqltypes.Result, error) {
+
+	span, ctx := trace.NewSpan(ctx, "Executor.executePlan")
+	defer span.Finish()
 
 	// 4: Execute!
 	qr, err := vcursor.ExecutePrimitive(ctx, plan.Instructions, bindVars, true)

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
 
 	"vitess.io/vitess/go/sqltypes"
@@ -54,6 +55,8 @@ func (l *Limit) GetTableName() string {
 
 // TryExecute satisfies the Primitive interface.
 func (l *Limit) TryExecute(ctx context.Context, vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantfields bool) (*sqltypes.Result, error) {
+	span, ctx := trace.NewSpan(ctx, "Limit.TryExecute")
+	defer span.Finish()
 	count, offset, err := l.getCountAndOffset(vcursor, bindVars)
 	if err != nil {
 		return nil, err

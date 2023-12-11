@@ -381,6 +381,9 @@ func saveSessionStats(safeSession *SafeSession, stmtType sqlparser.StatementType
 }
 
 func (e *Executor) execute(ctx context.Context, safeSession *SafeSession, sql string, bindVars map[string]*querypb.BindVariable, logStats *logstats.LogStats) (sqlparser.StatementType, *sqltypes.Result, error) {
+	span, ctx := trace.NewSpan(ctx, "Executor.execute")
+	defer span.Finish()
+
 	var err error
 	var qr *sqltypes.Result
 	var stmtType sqlparser.StatementType
@@ -968,6 +971,9 @@ type iQueryOption interface {
 // getPlan computes the plan for the given query. If one is in
 // the cache, it reuses it.
 func (e *Executor) getPlan(ctx context.Context, vcursor *vcursorImpl, sql string, comments sqlparser.MarginComments, bindVars map[string]*querypb.BindVariable, qo iQueryOption, logStats *logstats.LogStats) (*engine.Plan, error) {
+	span, ctx := trace.NewSpan(ctx, "Executor.getPlan")
+	defer span.Finish()
+
 	if e.VSchema() == nil {
 		return nil, errors.New("vschema not initialized")
 	}

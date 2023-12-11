@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/trace"
 	querypb "vitess.io/vitess/go/vt/proto/query"
 )
 
@@ -55,7 +56,9 @@ func (r *Rows) GetTableName() string {
 }
 
 // TryExecute implements the Primitive interface
-func (r *Rows) TryExecute(context.Context, VCursor, map[string]*querypb.BindVariable, bool) (*sqltypes.Result, error) {
+func (r *Rows) TryExecute(ctx context.Context, v VCursor, vars map[string]*querypb.BindVariable, wantFields bool) (*sqltypes.Result, error) {
+	span, _ := trace.NewSpan(ctx, "Rows.executePlan")
+	defer span.Finish()
 	return &sqltypes.Result{
 		Fields:   r.fields,
 		InsertID: 0,

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/vtgate/logstats"
 
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
@@ -392,6 +393,8 @@ func (vc *vcursorImpl) TargetString() string {
 const MaxBufferingRetries = 3
 
 func (vc *vcursorImpl) ExecutePrimitive(ctx context.Context, primitive engine.Primitive, bindVars map[string]*querypb.BindVariable, wantfields bool) (*sqltypes.Result, error) {
+	span, ctx := trace.NewSpan(ctx, "vcursorImpl.ExecutePrimitive")
+	defer span.Finish()
 	for try := 0; try < MaxBufferingRetries; try++ {
 		res, err := primitive.TryExecute(ctx, vc, bindVars, wantfields)
 		if err != nil && vterrors.RootCause(err) == buffer.ShardMissingError {
