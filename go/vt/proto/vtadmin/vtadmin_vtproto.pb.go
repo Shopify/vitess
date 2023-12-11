@@ -6306,26 +6306,6 @@ func (m *GetFullStatusRequest) SizeVT() (n int) {
 	return n
 }
 
-func (m *GetFullStatusRequest) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.ClusterId)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	if m.Alias != nil {
-		l = m.Alias.SizeVT()
-		n += 1 + l + sov(uint64(l))
-	}
-	if m.unknownFields != nil {
-		n += len(m.unknownFields)
-	}
-	return n
-}
-
 func (m *GetGatesRequest) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -6653,26 +6633,6 @@ func (m *GetTopologyPathRequest) SizeVT() (n int) {
 		n += 1 + l + sov(uint64(l))
 	}
 	n += len(m.unknownFields)
-	return n
-}
-
-func (m *GetTopologyPathRequest) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.ClusterId)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	l = len(m.Path)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	if m.unknownFields != nil {
-		n += len(m.unknownFields)
-	}
 	return n
 }
 
@@ -7531,25 +7491,6 @@ func (m *ValidateRequest) SizeVT() (n int) {
 	return n
 }
 
-func (m *ValidateRequest) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.ClusterId)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	if m.PingTablets {
-		n += 2
-	}
-	if m.unknownFields != nil {
-		n += len(m.unknownFields)
-	}
-	return n
-}
-
 func (m *ValidateKeyspaceRequest) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -7614,33 +7555,6 @@ func (m *ValidateShardRequest) SizeVT() (n int) {
 	return n
 }
 
-func (m *ValidateShardRequest) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.ClusterId)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	l = len(m.Keyspace)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	l = len(m.Shard)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	if m.PingTablets {
-		n += 2
-	}
-	if m.unknownFields != nil {
-		n += len(m.unknownFields)
-	}
-	return n
-}
-
 func (m *ValidateVersionKeyspaceRequest) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -7678,30 +7592,6 @@ func (m *ValidateVersionShardRequest) SizeVT() (n int) {
 		n += 1 + l + sov(uint64(l))
 	}
 	n += len(m.unknownFields)
-	return n
-}
-
-func (m *ValidateVersionShardRequest) SizeVT() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.ClusterId)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	l = len(m.Keyspace)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	l = len(m.Shard)
-	if l > 0 {
-		n += 1 + l + sov(uint64(l))
-	}
-	if m.unknownFields != nil {
-		n += len(m.unknownFields)
-	}
 	return n
 }
 

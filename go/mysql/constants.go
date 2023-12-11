@@ -556,9 +556,6 @@ const (
 	// max execution time exceeded
 	ERQueryTimeout = 3024
 
-	// max execution time exceeded
-	ERQueryTimeout = 3024
-
 	ErrCantCreateGeometryObject      = 1416
 	ErrGISDataWrongEndianess         = 3055
 	ErrNotImplementedForCartesianSRS = 3704

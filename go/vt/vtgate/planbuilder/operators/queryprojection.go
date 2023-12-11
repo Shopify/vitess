@@ -26,8 +26,6 @@ import (
 	"vitess.io/vitess/go/vt/vtgate/semantics"
 
 	"vitess.io/vitess/go/vt/vtgate/engine"
-	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
-	"vitess.io/vitess/go/vt/vtgate/semantics"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
@@ -680,85 +678,6 @@ func (qp *QueryProjection) AddGroupBy(by GroupBy) {
 
 func (qp *QueryProjection) GetColumnCount() int {
 	return len(qp.SelectExprs) - qp.AddedColumn
-}
-
-// NeedsProjecting returns true if we have projections that need to be evaluated at the vtgate level
-// and can't be pushed down to MySQL
-func (qp *QueryProjection) NeedsProjecting(
-	ctx *plancontext.PlanningContext,
-	pusher func(expr *sqlparser.AliasedExpr) (int, error),
-) (needsVtGateEval bool, expressions []sqlparser.Expr, colNames []string, err error) {
-	for _, se := range qp.SelectExprs {
-		var ae *sqlparser.AliasedExpr
-		ae, err = se.GetAliasedExpr()
-		if err != nil {
-			return false, nil, nil, err
-		}
-
-		expr := ae.Expr
-		colNames = append(colNames, ae.ColumnName())
-
-		if _, isCol := expr.(*sqlparser.ColName); isCol {
-			offset, err := pusher(ae)
-			if err != nil {
-				return false, nil, nil, err
-			}
-			expressions = append(expressions, sqlparser.NewOffset(offset, expr))
-			continue
-		}
-
-		rExpr := sqlparser.Rewrite(sqlparser.CloneExpr(expr), func(cursor *sqlparser.Cursor) bool {
-			col, isCol := cursor.Node().(*sqlparser.ColName)
-			if !isCol {
-				return true
-			}
-			var tableInfo semantics.TableInfo
-			tableInfo, err = ctx.SemTable.TableInfoForExpr(col)
-			if err != nil {
-				return true
-			}
-			_, isDT := tableInfo.(*semantics.DerivedTable)
-			if !isDT {
-				return true
-			}
-
-			var rewritten sqlparser.Expr
-			rewritten, err = semantics.RewriteDerivedTableExpression(col, tableInfo)
-			if err != nil {
-				return false
-			}
-			if sqlparser.ContainsAggregation(rewritten) {
-				offset, tErr := pusher(&sqlparser.AliasedExpr{Expr: col})
-				if tErr != nil {
-					err = tErr
-					return false
-				}
-
-				cursor.Replace(sqlparser.NewOffset(offset, col))
-			}
-			return true
-		}, nil).(sqlparser.Expr)
-
-		if err != nil {
-			return
-		}
-
-		if !sqlparser.EqualsExpr(rExpr, expr) {
-			// if we changed the expression, it means that we have to evaluate the rest at the vtgate level
-			expressions = append(expressions, rExpr)
-			needsVtGateEval = true
-			continue
-		}
-
-		// we did not need to push any parts of this expression down. Let's check if we can push all of it
-		offset, err := pusher(ae)
-		if err != nil {
-			return false, nil, nil, err
-		}
-		expressions = append(expressions, sqlparser.NewOffset(offset, expr))
-	}
-
-	return
 }
 
 func checkForInvalidGroupingExpressions(expr sqlparser.Expr) error {
