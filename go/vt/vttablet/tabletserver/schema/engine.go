@@ -741,7 +741,7 @@ func NewEngineForTests() *Engine {
 	se := &Engine{
 		isOpen:    true,
 		tables:    make(map[string]*Table),
-		historian: newHistorian(false, nil),
+		historian: newHistorian(false, 0, nil),
 	}
 	return se
 }

@@ -54,7 +54,7 @@ var (
 	id bigint,
 	msg varchar(64),
 	primary key (id)
-	) Engine=InnoDB
+	) Engine=InnoDB	
 `
 	cell1                  = "zone1"
 	cell2                  = "zone2"
@@ -128,10 +128,6 @@ func setupCluster(ctx context.Context, t *testing.T, shardName string, cells []s
 	shard := &cluster.Shard{Name: shardName}
 	shard.Vttablets = tablets
 
-	disableReplicationFlag := "--disable_active_reparents"
-	if clusterInstance.VtTabletMajorVersion >= 15 {
-		disableReplicationFlag = "--disable-replication-manager"
-	}
 	clusterInstance.VtTabletExtraArgs = append(clusterInstance.VtTabletExtraArgs,
 		"--lock_tables_timeout", "5s",
 		"--track_schema_versions=true",

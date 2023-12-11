@@ -19,7 +19,6 @@ package semantics
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
 

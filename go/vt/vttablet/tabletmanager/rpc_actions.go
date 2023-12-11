@@ -17,7 +17,6 @@ limitations under the License.
 package tabletmanager
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
