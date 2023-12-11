@@ -60,6 +60,7 @@ CREATE TABLE t1 (
     `name` varchar(20) NOT NULL,
     `value` varchar(50),
     shardKey bigint,
+    PRIMARY KEY (t1_id),
     UNIQUE KEY `t1id_name` (t1_id, `name`),
     KEY `IDX_TA_ValueName` (`value`(20), `name`(10))
 ) ENGINE InnoDB;
@@ -70,8 +71,29 @@ CREATE TABLE t2 (
     PRIMARY KEY (id)
 ) ENGINE InnoDB;
 
-CREATE TABLE t11 (
-    k BIGINT PRIMARY KEY,
-    a INT,
-    b INT
+CREATE TABLE t10 (
+   k BIGINT PRIMARY KEY,
+   a INT,
+   b INT
 );
+
+CREATE TABLE emp (
+    empno bigint NOT NULL,
+    ename VARCHAR(10),
+    job VARCHAR(9),
+    mgr bigint,
+    hiredate DATE,
+    sal bigint,
+    comm bigint,
+    deptno bigint,
+    PRIMARY KEY (empno)
+) Engine = InnoDB
+  COLLATE = utf8mb4_general_ci;
+
+CREATE TABLE dept (
+    deptno bigint,
+    dname VARCHAR(14),
+    loc VARCHAR(13),
+    PRIMARY KEY (deptno)
+) Engine = InnoDB
+  COLLATE = utf8mb4_general_ci;

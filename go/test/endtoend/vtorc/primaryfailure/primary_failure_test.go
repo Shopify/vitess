@@ -32,8 +32,12 @@ import (
 // covers the test case master-failover from orchestrator
 // Also tests that VTOrc can handle multiple failures, if the durability policies allow it
 func TestDownPrimary(t *testing.T) {
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
-	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 1, nil, cluster.VTOrcConfiguration{
+	// We specify the --wait-replicas-timeout to a small value because we spawn a cross-cell replica later in the test.
+	// If that replica is more advanced than the same-cell-replica, then we try to promote the cross-cell replica as an intermediate source.
+	// If we don't specify a small value of --wait-replicas-timeout, then we would end up waiting for 30 seconds for the dead-primary to respond, failing this test.
+	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 1, []string{"--remote_operation_timeout=10s", "--wait-replicas-timeout=5s"}, cluster.VTOrcConfiguration{
 		PreventCrossDataCenterPrimaryFailover: true,
 	}, 1, "semi_sync")
 	keyspace := &clusterInfo.ClusterInstance.Keyspaces[0]
@@ -64,14 +68,18 @@ func TestDownPrimary(t *testing.T) {
 	// check that the replication is setup correctly before we failover
 	utils.CheckReplication(t, clusterInfo, curPrimary, []*cluster.Vttablet{rdonly, replica, crossCellReplica}, 10*time.Second)
 
-	// Make the rdonly tablet unavailable
-	err := rdonly.MysqlctlProcess.Stop()
+	// Make the rdonly vttablet unavailable
+	err := rdonly.VttabletProcess.TearDown()
 	require.NoError(t, err)
-	// Make the current primary database unavailable.
+	err = rdonly.MysqlctlProcess.Stop()
+	require.NoError(t, err)
+	// Make the current primary vttablet unavailable.
+	err = curPrimary.VttabletProcess.TearDown()
+	require.NoError(t, err)
 	err = curPrimary.MysqlctlProcess.Stop()
 	require.NoError(t, err)
 	defer func() {
-		// we remove the tablet from our global list since its mysqlctl process has stopped and cannot be reused for other tests
+		// we remove the tablet from our global list
 		utils.PermanentlyRemoveVttablet(clusterInfo, curPrimary)
 		utils.PermanentlyRemoveVttablet(clusterInfo, rdonly)
 	}()
@@ -86,6 +94,7 @@ func TestDownPrimary(t *testing.T) {
 // Failover should not be cross data centers, according to the configuration file
 // covers part of the test case master-failover-lost-replicas from orchestrator
 func TestCrossDataCenterFailure(t *testing.T) {
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 1, nil, cluster.VTOrcConfiguration{
 		PreventCrossDataCenterPrimaryFailover: true,
@@ -131,6 +140,7 @@ func TestCrossDataCenterFailure(t *testing.T) {
 // Failover should not be cross data centers, according to the configuration file
 // In case of no viable candidates, we should error out
 func TestCrossDataCenterFailureError(t *testing.T) {
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 1, 1, nil, cluster.VTOrcConfiguration{
 		PreventCrossDataCenterPrimaryFailover: true,
@@ -177,6 +187,7 @@ func TestLostRdonlyOnPrimaryFailure(t *testing.T) {
 	// Earlier any replicas that were not able to replicate from the previous primary
 	// were detected by vtorc and could be configured to have their sources detached
 	t.Skip()
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 2, nil, cluster.VTOrcConfiguration{
 		PreventCrossDataCenterPrimaryFailover: true,
@@ -258,6 +269,7 @@ func TestLostRdonlyOnPrimaryFailure(t *testing.T) {
 // This test checks that the promotion of a tablet succeeds if it passes the promotion lag test
 // covers the test case master-failover-fail-promotion-lag-minutes-success from orchestrator
 func TestPromotionLagSuccess(t *testing.T) {
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 1, nil, cluster.VTOrcConfiguration{
 		ReplicationLagQuery:              "select 59",
@@ -307,6 +319,7 @@ func TestPromotionLagFailure(t *testing.T) {
 	// Earlier vtorc used to check that the promotion lag between the new primary and the old one
 	// was smaller than the configured value, otherwise it would fail the promotion
 	t.Skip()
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 3, 1, nil, cluster.VTOrcConfiguration{
 		ReplicationLagQuery:              "select 61",
@@ -359,6 +372,7 @@ func TestPromotionLagFailure(t *testing.T) {
 // We explicitly set one of the replicas to Prefer promotion rule.
 // That is the replica which should be promoted in case of primary failure
 func TestDownPrimaryPromotionRule(t *testing.T) {
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 1, nil, cluster.VTOrcConfiguration{
 		LockShardTimeoutSeconds: 5,
@@ -406,6 +420,7 @@ func TestDownPrimaryPromotionRule(t *testing.T) {
 // That is the replica which should be promoted in case of primary failure
 // It should also be caught up when it is promoted
 func TestDownPrimaryPromotionRuleWithLag(t *testing.T) {
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 1, nil, cluster.VTOrcConfiguration{
 		LockShardTimeoutSeconds: 5,
@@ -485,6 +500,7 @@ func TestDownPrimaryPromotionRuleWithLag(t *testing.T) {
 // We let a replica in our own cell lag. That is the replica which should be promoted in case of primary failure
 // It should also be caught up when it is promoted
 func TestDownPrimaryPromotionRuleWithLagCrossCenter(t *testing.T) {
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	defer cluster.PanicHandler(t)
 	utils.SetupVttabletsAndVTOrcs(t, clusterInfo, 2, 1, nil, cluster.VTOrcConfiguration{
 		LockShardTimeoutSeconds:               5,

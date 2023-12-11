@@ -7,9 +7,16 @@ on:
 jobs:
   build:
     name: Static Code Checks Etc
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
+      - name: Skip CI
+        run: |
+          if [[ "${{contains( github.event.pull_request.labels.*.name, 'Skip CI')}}" == "true" ]]; then
+            echo "skipping CI due to the 'Skip CI' label"
+            exit 1
+          fi
+
       - name: Check if workflow needs to be skipped
         id: skip-workflow
         run: |
@@ -18,17 +25,11 @@ jobs:
             skip='true'
           fi
           echo Skip ${skip}
-          echo "skip-workflow=${skip}" >> $GITHUB_OUTPUT  
+          echo "skip-workflow=${skip}" >> $GITHUB_OUTPUT
 
       - name: Checkout code
         if: steps.skip-workflow.outputs.skip-workflow == 'false'
         uses: actions/checkout@v3
-
-      - name: Run FOSSA scan and upload build data
-        if: steps.skip-workflow.outputs.skip-workflow == 'false'
-        uses: fossa-contrib/fossa-action@v1
-        with:
-          fossa-api-key: 76d7483ea206d530d9452e44bffe7ba8
 
       - name: Check for changes in Go files
         if: steps.skip-workflow.outputs.skip-workflow == 'false'
@@ -93,24 +94,18 @@ jobs:
             release_notes:
               - 'changelog/**'
               - './go/tools/releases/**'
+              - '.github/workflows/static_checks_etc.yml'
 
       - name: Set up Go
         if: steps.skip-workflow.outputs.skip-workflow == 'false' && (steps.changes.outputs.go_files == 'true' || steps.changes.outputs.parser_changes == 'true' || steps.changes.outputs.proto_changes == 'true')
         uses: actions/setup-go@v3
         with:
-          go-version: 1.18.9
+          go-version: 1.20.11
 
       - name: Tune the OS
         if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.go_files == 'true'
         run: |
-          echo '1024 65535' | sudo tee -a /proc/sys/net/ipv4/ip_local_port_range
-
-      # TEMPORARY WHILE GITHUB FIXES THIS https://github.com/actions/virtual-environments/issues/3185
-      - name: Add the current IP address, long hostname and short hostname record to /etc/hosts file
-        if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.go_files == 'true'
-        run: |
-          echo -e "$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)\t$(hostname -f) $(hostname -s)" | sudo tee -a /etc/hosts
-      # DON'T FORGET TO REMOVE CODE ABOVE WHEN ISSUE IS ADRESSED!
+          sudo sysctl -w net.ipv4.ip_local_port_range="22768 65535"
 
       - name: Run go fmt
         if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.go_files == 'true'
@@ -165,7 +160,7 @@ jobs:
 
       - name: Install golangci-lint
         if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.go_files == 'true'
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.46.2
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
 
       - name: Clean Env
         if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.go_files == 'true'
@@ -177,7 +172,7 @@ jobs:
 
       - name: Run golangci-lint
         if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.go_files == 'true'
-        run: $(go env GOPATH)/bin/golangci-lint run go/... || exit 1
+        run: $(go env GOPATH)/bin/golangci-lint run go/... --timeout 10m || exit 1
 
       - name: Run go mod tidy
         if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.go_files == 'true'
@@ -216,3 +211,4 @@ jobs:
           echo 'Running `go run ./go/tools/releases/releases.go` on CI yields the following changes:'
           echo "$output"
           echo ""
+          exit 1

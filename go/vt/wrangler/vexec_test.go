@@ -36,7 +36,7 @@ func TestVExec(t *testing.T) {
 	workflow := "wrWorkflow"
 	keyspace := "target"
 	query := "update _vt.vreplication set state = 'Running'"
-	env := newWranglerTestEnv([]string{"0"}, []string{"-80", "80-"}, "", nil, time.Now().Unix())
+	env := newWranglerTestEnv(t, []string{"0"}, []string{"-80", "80-"}, "", nil, time.Now().Unix())
 	defer env.close()
 	var logger = logutil.NewMemoryLogger()
 	wr := New(logger, env.topoServ, env.tmc)
@@ -87,13 +87,13 @@ func TestVExec(t *testing.T) {
 	var result *sqltypes.Result
 	var testCases []*TestCase
 	result = sqltypes.MakeTestResult(sqltypes.MakeTestFields(
-		"id|source|message|cell|tablet_types|workflow_type|workflow_sub_type",
-		"int64|varchar|varchar|varchar|varchar|int64|int64"),
-		"1|keyspace:\"source\" shard:\"0\" filter:{rules:{match:\"t1\"}}||||0|0",
+		"id|source|message|cell|tablet_types|workflow_type|workflow_sub_type|defer_secondary_keys",
+		"int64|varchar|varchar|varchar|varchar|int64|int64|int64"),
+		"1|keyspace:\"source\" shard:\"0\" filter:{rules:{match:\"t1\"}}||||0|0|0",
 	)
 	testCases = append(testCases, &TestCase{
 		name:   "select",
-		query:  "select id, source, message, cell, tablet_types, workflow_type, workflow_sub_type from _vt.vreplication",
+		query:  "select id, source, message, cell, tablet_types, workflow_type, workflow_sub_type, defer_secondary_keys from _vt.vreplication",
 		result: result,
 	})
 	result = &sqltypes.Result{
@@ -165,6 +165,7 @@ func TestVExec(t *testing.T) {
 +----------------------+----+--------------------------------+---------+-----------+------------------------------------------+`,
 	}
 	require.Equal(t, strings.Join(dryRunResults, "\n")+"\n\n\n\n\n", logger.String())
+	logger.Clear()
 }
 
 func TestWorkflowStatusUpdate(t *testing.T) {
@@ -179,7 +180,7 @@ func TestWorkflowListStreams(t *testing.T) {
 	ctx := context.Background()
 	workflow := "wrWorkflow"
 	keyspace := "target"
-	env := newWranglerTestEnv([]string{"0"}, []string{"-80", "80-"}, "", nil, 1234)
+	env := newWranglerTestEnv(t, []string{"0"}, []string{"-80", "80-"}, "", nil, 1234)
 	defer env.close()
 	logger := logutil.NewMemoryLogger()
 	wr := New(logger, env.topoServ, env.tmc)
@@ -352,7 +353,7 @@ func TestWorkflowListAll(t *testing.T) {
 	ctx := context.Background()
 	keyspace := "target"
 	workflow := "wrWorkflow"
-	env := newWranglerTestEnv([]string{"0"}, []string{"-80", "80-"}, "", nil, 0)
+	env := newWranglerTestEnv(t, []string{"0"}, []string{"-80", "80-"}, "", nil, 0)
 	defer env.close()
 	logger := logutil.NewMemoryLogger()
 	wr := New(logger, env.topoServ, env.tmc)
@@ -364,6 +365,7 @@ func TestWorkflowListAll(t *testing.T) {
 	workflows, err = wr.ListAllWorkflows(ctx, keyspace, false)
 	require.Nil(t, err)
 	require.Equal(t, []string{workflow, "wrWorkflow2"}, workflows)
+	logger.Clear()
 }
 
 func TestVExecValidations(t *testing.T) {
@@ -371,7 +373,7 @@ func TestVExecValidations(t *testing.T) {
 	workflow := "wf"
 	keyspace := "ks"
 	query := ""
-	env := newWranglerTestEnv([]string{"0"}, []string{"-80", "80-"}, "", nil, 0)
+	env := newWranglerTestEnv(t, []string{"0"}, []string{"-80", "80-"}, "", nil, 0)
 	defer env.close()
 
 	wr := New(logutil.NewConsoleLogger(), env.topoServ, env.tmc)

@@ -101,6 +101,17 @@ var (
 	// vtgate schema tracking flags
 	enableSchemaChangeSignal = true
 	schemaChangeUser         string
+	queryTimeout             int
+
+	// vtgate views flags
+	enableViews bool
+
+	// queryLogToFile controls whether query logs are sent to a file
+	queryLogToFile string
+	// queryLogBufferSize controls how many query logs will be buffered before dropping them if logging is not fast enough
+	queryLogBufferSize = 10
+
+	messageStreamGracePeriod = 30 * time.Second
 )
 
 func registerFlags(fs *pflag.FlagSet) {
@@ -130,6 +141,11 @@ func registerFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&enableDirectDDL, "enable_direct_ddl", enableDirectDDL, "Allow users to submit direct DDL statements")
 	fs.BoolVar(&enableSchemaChangeSignal, "schema_change_signal", enableSchemaChangeSignal, "Enable the schema tracker; requires queryserver-config-schema-change-signal to be enabled on the underlying vttablets for this to work")
 	fs.StringVar(&schemaChangeUser, "schema_change_signal_user", schemaChangeUser, "User to be used to send down query to vttablet to retrieve schema changes")
+	fs.IntVar(&queryTimeout, "query-timeout", queryTimeout, "Sets the default query timeout (in ms). Can be overridden by session variable (query_timeout) or comment directive (QUERY_TIMEOUT_MS)")
+	fs.StringVar(&queryLogToFile, "log_queries_to_file", queryLogToFile, "Enable query logging to the specified file")
+	fs.IntVar(&queryLogBufferSize, "querylog-buffer-size", queryLogBufferSize, "Maximum number of buffered query logs before throttling log output")
+	fs.DurationVar(&messageStreamGracePeriod, "message_stream_grace_period", messageStreamGracePeriod, "the amount of time to give for a vttablet to resume if it ends a message stream, usually because of a reparent.")
+	fs.BoolVar(&enableViews, "enable-views", enableViews, "Enable views support in vtgate.")
 }
 func init() {
 	servenv.OnParseFor("vtgate", registerFlags)
@@ -158,14 +174,17 @@ func getTxMode() vtgatepb.TransactionMode {
 var (
 	rpcVTGate *VTGate
 
-	vschemaCounters *stats.CountersWithSingleLabel
+	// vschemaCounters needs to be initialized before planner to
+	// catch the initial load stats.
+	vschemaCounters = stats.NewCountersWithSingleLabel("VtgateVSchemaCounts", "Vtgate vschema counts", "changes")
 
 	// Error counters should be global so they can be set from anywhere
-	errorCounts *stats.CountersWithMultiLabels
+	errorCounts = stats.NewCountersWithMultiLabels("VtgateApiErrorCounts", "Vtgate API error counts per error type", []string{"Operation", "Keyspace", "DbType", "Code"})
 
-	warnings *stats.CountersWithSingleLabel
+	warnings = stats.NewCountersWithSingleLabel("VtGateWarnings", "Vtgate warnings", "type", "IgnoredSet", "ResultsExceeded", "WarnPayloadSizeExceeded")
 
-	vstreamSkewDelayCount *stats.Counter
+	vstreamSkewDelayCount = stats.NewCounter("VStreamEventsDelayedBySkewAlignment",
+		"Number of events that had to wait because the skew across shards was too high")
 )
 
 // VTGate is the rpc interface to vtgate. Only one instance
@@ -210,13 +229,6 @@ func Init(
 		log.Fatalf("VTGate already initialized")
 	}
 
-	// vschemaCounters needs to be initialized before planner to
-	// catch the initial load stats.
-	vschemaCounters = stats.NewCountersWithSingleLabel("VtgateVSchemaCounts", "Vtgate vschema counts", "changes")
-
-	vstreamSkewDelayCount = stats.NewCounter("VStreamEventsDelayedBySkewAlignment",
-		"Number of events that had to wait because the skew across shards was too high")
-
 	// Build objects from low to high level.
 	// Start with the gateway. If we can't reach the topology service,
 	// we can't go on much further, so we log.Fatal out.
@@ -251,7 +263,7 @@ func Init(
 	var si SchemaInfo // default nil
 	var st *vtschema.Tracker
 	if enableSchemaChangeSignal {
-		st = vtschema.NewTracker(gw.hc.Subscribe(), schemaChangeUser)
+		st = vtschema.NewTracker(gw.hc.Subscribe(), schemaChangeUser, enableViews)
 		addKeyspaceToTracker(ctx, srvResolver, st, gw)
 		si = st
 	}
@@ -306,8 +318,6 @@ func Init(
 		logStreamExecute: logutil.NewThrottledLogger("StreamExecute", 5*time.Second),
 	}
 
-	errorCounts = stats.NewCountersWithMultiLabels("VtgateApiErrorCounts", "Vtgate API error counts per error type", []string{"Operation", "Keyspace", "DbType", "Code"})
-
 	_ = stats.NewRates("QPSByOperation", stats.CounterForDimension(rpcVTGate.timings, "Operation"), 15, 1*time.Minute)
 	_ = stats.NewRates("QPSByKeyspace", stats.CounterForDimension(rpcVTGate.timings, "Keyspace"), 15, 1*time.Minute)
 	_ = stats.NewRates("QPSByDbType", stats.CounterForDimension(rpcVTGate.timings, "DbType"), 15*60/5, 5*time.Second)
@@ -316,8 +326,6 @@ func Init(
 	_ = stats.NewRates("ErrorsByKeyspace", stats.CounterForDimension(errorCounts, "Keyspace"), 15, 1*time.Minute)
 	_ = stats.NewRates("ErrorsByDbType", stats.CounterForDimension(errorCounts, "DbType"), 15, 1*time.Minute)
 	_ = stats.NewRates("ErrorsByCode", stats.CounterForDimension(errorCounts, "Code"), 15, 1*time.Minute)
-
-	warnings = stats.NewCountersWithSingleLabel("VtGateWarnings", "Vtgate warnings", "type", "IgnoredSet", "ResultsExceeded", "WarnPayloadSizeExceeded")
 
 	servenv.OnRun(func() {
 		for _, f := range RegisterVTGates {

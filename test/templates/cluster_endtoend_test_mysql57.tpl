@@ -14,9 +14,16 @@ concurrency:
 jobs:
   build:
     name: Run endtoend tests on {{.Name}}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
+    - name: Skip CI
+      run: |
+        if [[ "{{"${{contains( github.event.pull_request.labels.*.name, 'Skip CI')}}"}}" == "true" ]]; then
+          echo "skipping CI due to the 'Skip CI' label"
+          exit 1
+        fi
+
     - name: Check if workflow needs to be skipped
       id: skip-workflow
       run: |
@@ -50,12 +57,15 @@ jobs:
             - 'config/**'
             - 'bootstrap.sh'
             - '.github/workflows/{{.FileName}}'
+            {{- if or (contains .Name "onlineddl") (contains .Name "schemadiff") }}
+            - 'go/test/endtoend/onlineddl/vrepl_suite/testdata'
+            {{- end}}
 
     - name: Set up Go
       if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.end_to_end == 'true'
       uses: actions/setup-go@v3
       with:
-        go-version: 1.18.9
+        go-version: 1.20.11
 
     - name: Set up python
       if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.end_to_end == 'true'
@@ -64,7 +74,7 @@ jobs:
     - name: Tune the OS
       if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.end_to_end == 'true'
       run: |
-        echo '1024 65535' | sudo tee -a /proc/sys/net/ipv4/ip_local_port_range
+        sudo sysctl -w net.ipv4.ip_local_port_range="22768 65535"
         # Increase the asynchronous non-blocking I/O. More information at https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_use_native_aio
         echo "fs.aio-max-nr = 1048576" | sudo tee -a /etc/sysctl.conf
         sudo sysctl -p /etc/sysctl.conf
@@ -89,14 +99,14 @@ jobs:
         # Get key to latest MySQL repo
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 467B942D3A79BD29
 
-        wget -c https://dev.mysql.com/get/mysql-apt-config_0.8.14-1_all.deb
-        # Bionic packages are still compatible for Focal since there's no MySQL 5.7
-        # packages for Focal.
+        wget -c https://dev.mysql.com/get/mysql-apt-config_0.8.24-1_all.deb
+        # Bionic packages are still compatible for Jammy since there's no MySQL 5.7
+        # packages for Jammy.
         echo mysql-apt-config mysql-apt-config/repo-codename select bionic | sudo debconf-set-selections
         echo mysql-apt-config mysql-apt-config/select-server select mysql-5.7 | sudo debconf-set-selections
         sudo DEBIAN_FRONTEND="noninteractive" dpkg -i mysql-apt-config*
         sudo apt-get update
-        sudo DEBIAN_FRONTEND="noninteractive" apt-get install -y mysql-client=5.7* mysql-community-server=5.7* mysql-server=5.7*
+        sudo DEBIAN_FRONTEND="noninteractive" apt-get install -y mysql-client=5.7* mysql-community-server=5.7* mysql-server=5.7* libncurses5
 
         sudo apt-get install -y make unzip g++ etcd curl git wget eatmydata
         sudo service mysql stop
@@ -129,6 +139,18 @@ jobs:
           make tools
 
     {{end}}
+
+    - name: Setup launchable dependencies
+      if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.end_to_end == 'true' && github.base_ref == 'main'
+      run: |
+        # Get Launchable CLI installed. If you can, make it a part of the builder image to speed things up
+        pip3 install --user launchable~=1.0 > /dev/null
+
+        # verify that launchable setup is all correct.
+        launchable verify || true
+
+        # Tell Launchable about the build you are producing and testing
+        launchable record build --name "$GITHUB_RUN_ID" --source .
 
     - name: Run cluster endtoend test
       if: steps.skip-workflow.outputs.skip-workflow == 'false' && steps.changes.outputs.end_to_end == 'true'

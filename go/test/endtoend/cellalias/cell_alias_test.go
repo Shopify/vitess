@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,6 +117,12 @@ func TestMain(m *testing.M) {
 			return 1, err
 		}
 
+		vtctldClientProcess := cluster.VtctldClientProcessInstance("localhost", localCluster.VtctldProcess.GrpcPort, localCluster.TmpDirectory)
+		_, err = vtctldClientProcess.ExecuteCommandWithOutput("CreateKeyspace", keyspaceName, "--durability-policy=semi_sync")
+		if err != nil {
+			return 1, err
+		}
+
 		shard1Primary = localCluster.NewVttabletInstance("primary", 0, cell1)
 		shard1Replica = localCluster.NewVttabletInstance("replica", 0, cell2)
 		shard1Rdonly = localCluster.NewVttabletInstance("rdonly", 0, cell2)
@@ -139,7 +146,6 @@ func TestMain(m *testing.M) {
 				hostname,
 				localCluster.TmpDirectory,
 				commonTabletArg,
-				true,
 				localCluster.DefaultCharset,
 			)
 			tablet.VttabletProcess.SupportsBackup = true
@@ -153,10 +159,6 @@ func TestMain(m *testing.M) {
 			if err := proc.Wait(); err != nil {
 				return 1, err
 			}
-		}
-
-		if err := localCluster.VtctlProcess.CreateKeyspace(keyspaceName); err != nil {
-			return 1, err
 		}
 
 		shard1 := cluster.Shard{
@@ -201,6 +203,10 @@ func TestMain(m *testing.M) {
 		}
 
 		if err := localCluster.VtctlclientProcess.InitializeShard(keyspaceName, shard2.Name, shard2Primary.Cell, shard2Primary.TabletUID); err != nil {
+			return 1, err
+		}
+
+		if err := localCluster.StartVTOrc(keyspaceName); err != nil {
 			return 1, err
 		}
 
@@ -334,12 +340,9 @@ func TestAddAliasWhileVtgateUp(t *testing.T) {
 
 func waitTillAllTabletsAreHealthyInVtgate(t *testing.T, vtgateInstance cluster.VtgateProcess, shards ...string) {
 	for _, shard := range shards {
-		err := vtgateInstance.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.primary", keyspaceName, shard), 1)
-		require.Nil(t, err)
-		err = vtgateInstance.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", keyspaceName, shard), 1)
-		require.Nil(t, err)
-		err = vtgateInstance.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", keyspaceName, shard), 1)
-		require.Nil(t, err)
+		require.NoError(t, vtgateInstance.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.primary", keyspaceName, shard), 1, 30*time.Second))
+		require.NoError(t, vtgateInstance.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", keyspaceName, shard), 1, 30*time.Second))
+		require.NoError(t, vtgateInstance.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", keyspaceName, shard), 1, 30*time.Second))
 	}
 }
 

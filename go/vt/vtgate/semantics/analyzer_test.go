@@ -298,7 +298,7 @@ func TestNotUniqueTableName(t *testing.T) {
 			parse, _ := sqlparser.Parse(query)
 			_, err := Analyze(parse.(sqlparser.SelectStatement), "test", &FakeSI{})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "Not unique table/alias")
+			require.Contains(t, err.Error(), "VT03013: not unique table/alias")
 		})
 	}
 }
@@ -320,7 +320,7 @@ func TestMissingTable(t *testing.T) {
 
 func TestUnknownColumnMap2(t *testing.T) {
 	varchar := querypb.Type_VARCHAR
-	int := querypb.Type_INT32
+	integer := querypb.Type_INT32
 
 	authoritativeTblA := vindexes.Table{
 		Name: sqlparser.NewIdentifierCS("a"),
@@ -346,7 +346,7 @@ func TestUnknownColumnMap2(t *testing.T) {
 		Name: sqlparser.NewIdentifierCS("a"),
 		Columns: []vindexes.Column{{
 			Name: sqlparser.NewIdentifierCI("col"),
-			Type: int,
+			Type: integer,
 		}},
 		ColumnListAuthoritative: true,
 	}
@@ -354,7 +354,7 @@ func TestUnknownColumnMap2(t *testing.T) {
 		Name: sqlparser.NewIdentifierCS("b"),
 		Columns: []vindexes.Column{{
 			Name: sqlparser.NewIdentifierCI("col"),
-			Type: int,
+			Type: integer,
 		}},
 		ColumnListAuthoritative: true,
 	}
@@ -391,7 +391,7 @@ func TestUnknownColumnMap2(t *testing.T) {
 		name:   "authoritative columns",
 		schema: map[string]*vindexes.Table{"a": &authoritativeTblA, "b": &authoritativeTblBWithInt},
 		err:    false,
-		typ:    &int,
+		typ:    &integer,
 	}, {
 		name:   "authoritative columns with overlap",
 		schema: map[string]*vindexes.Table{"a": &authoritativeTblAWithConflict, "b": &authoritativeTblB},
@@ -570,13 +570,13 @@ func TestSubqueriesMappingWhereClause(t *testing.T) {
 			}
 
 			extractedSubq := semTable.SubqueryRef[subq]
-			assert.True(t, sqlparser.EqualsExpr(extractedSubq.Subquery, subq))
-			assert.True(t, sqlparser.EqualsExpr(extractedSubq.Original, sel.Where.Expr))
+			assert.True(t, sqlparser.Equals.Expr(extractedSubq.Subquery, subq))
+			assert.True(t, sqlparser.Equals.Expr(extractedSubq.Original, sel.Where.Expr))
 			assert.EqualValues(t, tc.opCode, extractedSubq.OpCode)
 			if tc.otherSideName == "" {
 				assert.Nil(t, extractedSubq.OtherSide)
 			} else {
-				assert.True(t, sqlparser.EqualsExpr(extractedSubq.OtherSide, sqlparser.NewColName(tc.otherSideName)))
+				assert.True(t, sqlparser.Equals.Expr(extractedSubq.OtherSide, sqlparser.NewColName(tc.otherSideName)))
 			}
 		})
 	}
@@ -604,8 +604,8 @@ func TestSubqueriesMappingSelectExprs(t *testing.T) {
 
 			subq := sel.SelectExprs[tc.selExprIdx].(*sqlparser.AliasedExpr).Expr.(*sqlparser.Subquery)
 			extractedSubq := semTable.SubqueryRef[subq]
-			assert.True(t, sqlparser.EqualsExpr(extractedSubq.Subquery, subq))
-			assert.True(t, sqlparser.EqualsExpr(extractedSubq.Original, subq))
+			assert.True(t, sqlparser.Equals.Expr(extractedSubq.Subquery, subq))
+			assert.True(t, sqlparser.Equals.Expr(extractedSubq.Original, subq))
 			assert.EqualValues(t, engine.PulloutValue, extractedSubq.OpCode)
 		})
 	}
@@ -886,13 +886,13 @@ func TestInvalidQueries(t *testing.T) {
 		err: "The used SELECT statements have a different number of columns",
 	}, {
 		sql: "select id from a union select 3 order by a.id",
-		err: "Table 'a' from one of the SELECTs cannot be used in global ORDER clause",
+		err: "Table a from one of the SELECTs cannot be used in global ORDER clause",
 	}, {
 		sql: "select a.id, b.id from a, b union select 1, 2 order by id",
 		err: "Column 'id' in field list is ambiguous",
 	}, {
 		sql: "select sql_calc_found_rows id from a union select 1 limit 109",
-		err: "SQL_CALC_FOUND_ROWS not supported with union",
+		err: "VT12001: unsupported: SQL_CALC_FOUND_ROWS not supported with union",
 	}, {
 		sql: "select * from (select sql_calc_found_rows id from a) as t",
 		err: "Incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'",
@@ -901,7 +901,7 @@ func TestInvalidQueries(t *testing.T) {
 		err: "Incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'",
 	}, {
 		sql: "select id from t1 natural join t2",
-		err: "unsupported: natural join",
+		err: "VT12001: unsupported: natural join",
 	}, {
 		sql: "select * from music where user_id IN (select sql_calc_found_rows * from music limit 10)",
 		err: "Incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'",
@@ -910,7 +910,7 @@ func TestInvalidQueries(t *testing.T) {
 		err: "is_free_lock('xyz') allowed only with dual",
 	}, {
 		sql: "SELECT * FROM JSON_TABLE('[ {\"c1\": null} ]','$[*]' COLUMNS( c1 INT PATH '$.c1' ERROR ON ERROR )) as jt",
-		err: "unsupported: json_table expressions",
+		err: "VT12001: unsupported: json_table expressions",
 	}, {
 		sql:        "select does_not_exist from t1",
 		shardedErr: "symbol does_not_exist not found",
@@ -1432,6 +1432,28 @@ func TestSingleUnshardedKeyspace(t *testing.T) {
 			assert.Equal(t, test.tables, tables)
 		})
 	}
+}
+
+// TestScopingSubQueryJoinClause tests the scoping behavior of a subquery containing a join clause.
+// The test ensures that the scoping analysis correctly identifies and handles the relationships
+// between the tables involved in the join operation with the outer query.
+func TestScopingSubQueryJoinClause(t *testing.T) {
+	query := "select (select 1 from u1 join u2 on u1.id = u2.id and u2.id = u3.id) x from u3"
+
+	parse, err := sqlparser.Parse(query)
+	require.NoError(t, err)
+
+	st, err := Analyze(parse, "user", &FakeSI{
+		Tables: map[string]*vindexes.Table{
+			"t": {Name: sqlparser.NewIdentifierCS("t")},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, st.NotUnshardedErr)
+
+	tb := st.DirectDeps(parse.(*sqlparser.Select).SelectExprs[0].(*sqlparser.AliasedExpr).Expr.(*sqlparser.Subquery).Select.(*sqlparser.Select).From[0].(*sqlparser.JoinTableExpr).Condition.On)
+	require.Equal(t, 3, tb.NumberOfTables())
+
 }
 
 var ks1 = &vindexes.Keyspace{

@@ -21,9 +21,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"testing"
 	"time"
+
+	_flag "vitess.io/vitess/go/internal/flag"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11227,7 +11230,7 @@ func TestValidateVersionKeyspace(t *testing.T) {
 					"primary:0": "version1",
 					"replica:0": "version1",
 				}
-				getVersionFromTablet = testutil.MockGetVersionFromTablet(addrVersionMap)
+				SetVersionFunc(testutil.MockGetVersionFromTablet(addrVersionMap))
 			},
 			shouldErr: false,
 		},
@@ -11247,7 +11250,7 @@ func TestValidateVersionKeyspace(t *testing.T) {
 					"primary:0": "version1",
 					"replica:0": "version2",
 				}
-				getVersionFromTablet = testutil.MockGetVersionFromTablet(addrVersionMap)
+				SetVersionFunc(testutil.MockGetVersionFromTablet(addrVersionMap))
 			},
 			shouldErr: false,
 		},
@@ -11339,7 +11342,7 @@ func TestValidateVersionShard(t *testing.T) {
 					"primary:0": "version1",
 					"replica:0": "version1",
 				}
-				getVersionFromTablet = testutil.MockGetVersionFromTablet(addrVersionMap)
+				SetVersionFunc(testutil.MockGetVersionFromTablet(addrVersionMap))
 			},
 			shouldErr: false,
 		},
@@ -11357,25 +11360,26 @@ func TestValidateVersionShard(t *testing.T) {
 					"primary:0": "version1",
 					"replica:0": "version2",
 				}
-				getVersionFromTablet = testutil.MockGetVersionFromTablet(addrVersionMap)
+				SetVersionFunc(testutil.MockGetVersionFromTablet(addrVersionMap))
 			},
 			shouldErr: false,
 		},
 	}
 
 	for _, tt := range tests {
+		curT := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			tt.setup()
-			resp, err := vtctld.ValidateVersionShard(ctx, tt.req)
-			if tt.shouldErr {
+			curT.setup()
+			resp, err := vtctld.ValidateVersionShard(ctx, curT.req)
+			if curT.shouldErr {
 				assert.Error(t, err)
 				return
 			}
 
 			assert.NoError(t, err)
-			utils.MustMatch(t, tt.expected, resp)
+			utils.MustMatch(t, curT.expected, resp)
 		})
 	}
 }
@@ -11923,4 +11927,8 @@ func TestValidateShard(t *testing.T) {
 			assert.Equal(t, tt.expected, resp)
 		})
 	}
+}
+func TestMain(m *testing.M) {
+	_flag.ParseFlagsForTest()
+	os.Exit(m.Run())
 }

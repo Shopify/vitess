@@ -225,7 +225,14 @@ func (th *testHandler) ComPrepare(c *Conn, query string, bindVars map[string]*qu
 func (th *testHandler) ComStmtExecute(c *Conn, prepare *PrepareData, callback func(*sqltypes.Result) error) error {
 	return nil
 }
-func (th *testHandler) ComBinlogDumpGTID(c *Conn, gtidSet GTIDSet) error {
+
+func (th *testHandler) ComRegisterReplica(c *Conn, replicaHost string, replicaPort uint16, replicaUser string, replicaPassword string) error {
+	return nil
+}
+func (th *testHandler) ComBinlogDump(c *Conn, logFile string, binlogPos uint32) error {
+	return nil
+}
+func (th *testHandler) ComBinlogDumpGTID(c *Conn, logFile string, logPos uint64, gtidSet GTIDSet) error {
 	return nil
 }
 
@@ -562,7 +569,8 @@ func TestServer(t *testing.T) {
 	output, err = runMysqlWithErr(t, params, "error after send")
 	require.Error(t, err)
 	assert.Contains(t, output, "ERROR 2013 (HY000)", "Unexpected output for 'panic'")
-	assert.Contains(t, output, "Lost connection to MySQL server during query", "Unexpected output for 'panic'")
+	// MariaDB might not print the MySQL bit here
+	assert.Regexp(t, `Lost connection to( MySQL)? server during query`, output, "Unexpected output for 'panic': %v", output)
 
 	// Run an 'insert' command, no rows, but rows affected.
 	output, err = runMysqlWithErr(t, params, "insert")
@@ -674,7 +682,8 @@ func TestServerStats(t *testing.T) {
 	output, err = runMysqlWithErr(t, params, "panic")
 	require.Error(t, err)
 	assert.Contains(t, output, "ERROR 2013 (HY000)")
-	assert.Contains(t, output, "Lost connection to MySQL server during query", "Unexpected output for 'panic': %v", output)
+	// MariaDB might not print the MySQL bit here
+	assert.Regexp(t, `Lost connection to( MySQL)? server during query`, output, "Unexpected output for 'panic': %v", output)
 
 	assert.EqualValues(t, 0, connCount.Get(), "connCount")
 	assert.EqualValues(t, 2, connAccept.Get(), "connAccept")
@@ -997,9 +1006,7 @@ func TestCachingSha2PasswordAuthWithTLS(t *testing.T) {
 
 	// Create the listener, so we can get its host.
 	l, err := NewListener("tcp", "127.0.0.1:", authServer, th, 0, 0, false, false)
-	if err != nil {
-		t.Fatalf("NewListener failed: %v", err)
-	}
+	require.NoError(t, err, "NewListener failed: %v", err)
 	defer l.Close()
 	host := l.Addr().(*net.TCPAddr).IP.String()
 	port := l.Addr().(*net.TCPAddr).Port
@@ -1018,9 +1025,8 @@ func TestCachingSha2PasswordAuthWithTLS(t *testing.T) {
 		"",
 		"",
 		tls.VersionTLS12)
-	if err != nil {
-		t.Fatalf("TLSServerConfig failed: %v", err)
-	}
+	require.NoError(t, err, "TLSServerConfig failed: %v", err)
+
 	l.TLSConfig.Store(serverConfig)
 	go func() {
 		l.Accept()
@@ -1044,16 +1050,14 @@ func TestCachingSha2PasswordAuthWithTLS(t *testing.T) {
 	ctx := context.Background()
 
 	conn, err := Connect(ctx, params)
-	if err != nil {
-		t.Fatalf("unexpected connection error: %v", err)
-	}
+	require.NoError(t, err, "unexpected connection error: %v", err)
+
 	defer conn.Close()
 
 	// Run a 'select rows' command with results.
 	result, err := conn.ExecuteFetch("select rows", 10000, true)
-	if err != nil {
-		t.Fatalf("ExecuteFetch failed: %v", err)
-	}
+	require.NoError(t, err, "ExecuteFetch failed: %v", err)
+
 	utils.MustMatch(t, result, selectRowsResult)
 
 	// Send a ComQuit to avoid the error message on the server side.
@@ -1096,9 +1100,7 @@ func TestCachingSha2PasswordAuthWithMoreData(t *testing.T) {
 
 	// Create the listener, so we can get its host.
 	l, err := NewListener("tcp", "127.0.0.1:", authServer, th, 0, 0, false, false)
-	if err != nil {
-		t.Fatalf("NewListener failed: %v", err)
-	}
+	require.NoError(t, err, "NewListener failed: %v", err)
 	defer l.Close()
 	host := l.Addr().(*net.TCPAddr).IP.String()
 	port := l.Addr().(*net.TCPAddr).Port
@@ -1117,9 +1119,8 @@ func TestCachingSha2PasswordAuthWithMoreData(t *testing.T) {
 		"",
 		"",
 		tls.VersionTLS12)
-	if err != nil {
-		t.Fatalf("TLSServerConfig failed: %v", err)
-	}
+	require.NoError(t, err, "TLSServerConfig failed: %v", err)
+
 	l.TLSConfig.Store(serverConfig)
 	go func() {
 		l.Accept()
@@ -1143,16 +1144,14 @@ func TestCachingSha2PasswordAuthWithMoreData(t *testing.T) {
 	ctx := context.Background()
 
 	conn, err := Connect(ctx, params)
-	if err != nil {
-		t.Fatalf("unexpected connection error: %v", err)
-	}
+	require.NoError(t, err, "unexpected connection error: %v", err)
+
 	defer conn.Close()
 
 	// Run a 'select rows' command with results.
 	result, err := conn.ExecuteFetch("select rows", 10000, true)
-	if err != nil {
-		t.Fatalf("ExecuteFetch failed: %v", err)
-	}
+	require.NoError(t, err, "ExecuteFetch failed: %v", err)
+
 	utils.MustMatch(t, result, selectRowsResult)
 
 	// Send a ComQuit to avoid the error message on the server side.
@@ -1170,9 +1169,7 @@ func TestCachingSha2PasswordAuthWithoutTLS(t *testing.T) {
 
 	// Create the listener.
 	l, err := NewListener("tcp", "127.0.0.1:", authServer, th, 0, 0, false, false)
-	if err != nil {
-		t.Fatalf("NewListener failed: %v", err)
-	}
+	require.NoError(t, err, "NewListener failed: %v", err)
 	defer l.Close()
 	host := l.Addr().(*net.TCPAddr).IP.String()
 	port := l.Addr().(*net.TCPAddr).Port

@@ -76,6 +76,7 @@ type SandboxConn struct {
 	ReadTransactionCount     sync2.AtomicInt64
 	ReserveCount             sync2.AtomicInt64
 	ReleaseCount             sync2.AtomicInt64
+	GetSchemaCount           sync2.AtomicInt64
 
 	// Queries stores the non-batch requests received.
 	Queries []*querypb.BoundQuery
@@ -119,6 +120,8 @@ type SandboxConn struct {
 	EphemeralShardErr error
 
 	NotServing bool
+
+	getSchemaResult []map[string]string
 }
 
 var _ queryservice.QueryService = (*SandboxConn)(nil) // compile-time interface check
@@ -152,6 +155,11 @@ func (sbc *SandboxConn) getError() error {
 // SetResults sets what this con should return next time.
 func (sbc *SandboxConn) SetResults(r []*sqltypes.Result) {
 	sbc.results = r
+}
+
+// SetSchemaResult sets what GetSchema should return on each call.
+func (sbc *SandboxConn) SetSchemaResult(r []map[string]string) {
+	sbc.getSchemaResult = r
 }
 
 // Execute is part of the QueryService interface.
@@ -576,6 +584,17 @@ func (sbc *SandboxConn) Release(ctx context.Context, target *querypb.Target, tra
 	return sbc.getError()
 }
 
+// GetSchema implements the QueryService interface
+func (sbc *SandboxConn) GetSchema(ctx context.Context, target *querypb.Target, tableType querypb.SchemaTableType, tableNames []string, callback func(schemaRes *querypb.GetSchemaResponse) error) error {
+	sbc.GetSchemaCount.Add(1)
+	if len(sbc.getSchemaResult) == 0 {
+		return nil
+	}
+	resp := sbc.getSchemaResult[0]
+	sbc.getSchemaResult = sbc.getSchemaResult[1:]
+	return callback(&querypb.GetSchemaResponse{TableDefinition: resp})
+}
+
 // Close does not change ExecCount
 func (sbc *SandboxConn) Close(ctx context.Context) error {
 	return nil
@@ -618,8 +637,7 @@ func (sbc *SandboxConn) getNextResult(stmt sqlparser.Statement) *sqltypes.Result
 		sqlparser.DDLStatement,
 		*sqlparser.AlterVschema,
 		*sqlparser.Use,
-		*sqlparser.OtherAdmin,
-		*sqlparser.SetTransaction:
+		*sqlparser.OtherAdmin:
 		return &sqltypes.Result{}
 	}
 

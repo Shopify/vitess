@@ -220,6 +220,7 @@ func (vx *vexec) exec() (map[*topo.TabletInfo]*querypb.QueryResult, error) {
 				// up any related data.
 				if vx.query == sqlVReplicationDelete {
 					vx.wr.deleteWorkflowVDiffData(ctx, primary.Tablet, vx.workflow)
+					vx.wr.optimizeCopyStateTable(primary.Tablet)
 				}
 				mu.Lock()
 				results[primary] = qr
@@ -371,6 +372,10 @@ type ReplicationStatusResult struct {
 	SourceTimeZone string
 	// TargetTimeZone is set to the original SourceTimeZone, in reverse streams, if it was provided to the workflow
 	TargetTimeZone string
+	// OnDDL specifies the action to be taken when a DDL is encountered.
+	OnDDL string `json:"OnDDL,omitempty"`
+	// DeferSecondaryKeys specifies whether to defer the creation of secondary keys.
+	DeferSecondaryKeys bool `json:"DeferSecondaryKeys,omitempty"`
 }
 
 // ReplicationLocation represents a location that data is either replicating from, or replicating into.
@@ -433,7 +438,8 @@ type ReplicationStatus struct {
 	// sourceTimeZone represents the time zone of each stream, only set if not UTC
 	sourceTimeZone string
 	// targetTimeZone is set to the sourceTimeZone of the forward stream, if it was provided in the workflow
-	targetTimeZone string
+	targetTimeZone     string
+	deferSecondaryKeys bool
 }
 
 func (wr *Wrangler) getReplicationStatusFromRow(ctx context.Context, row sqltypes.RowNamedValues, primary *topo.TabletInfo) (*ReplicationStatus, string, error) {
@@ -441,6 +447,7 @@ func (wr *Wrangler) getReplicationStatusFromRow(ctx context.Context, row sqltype
 	var id, timeUpdated, transactionTimestamp, timeHeartbeat, timeThrottled int64
 	var state, dbName, pos, stopPos, message, tags, componentThrottled string
 	var workflowType, workflowSubType int64
+	var deferSecondaryKeys bool
 	var bls binlogdatapb.BinlogSource
 	var mpos mysql.Position
 
@@ -510,6 +517,7 @@ func (wr *Wrangler) getReplicationStatusFromRow(ctx context.Context, row sqltype
 	}
 	workflowType, _ = row.ToInt64("workflow_type")
 	workflowSubType, _ = row.ToInt64("workflow_sub_type")
+	deferSecondaryKeys, _ = row.ToBool("defer_secondary_keys")
 
 	status := &ReplicationStatus{
 		Shard:                primary.Shard,
@@ -531,6 +539,7 @@ func (wr *Wrangler) getReplicationStatusFromRow(ctx context.Context, row sqltype
 		targetTimeZone:       bls.TargetTimeZone,
 		WorkflowType:         binlogdatapb.VReplicationWorkflowType_name[int32(workflowType)],
 		WorkflowSubType:      binlogdatapb.VReplicationWorkflowSubType_name[int32(workflowSubType)],
+		deferSecondaryKeys:   deferSecondaryKeys,
 	}
 	status.CopyState, err = wr.getCopyState(ctx, primary, id)
 	if err != nil {
@@ -562,7 +571,8 @@ func (wr *Wrangler) getStreams(ctx context.Context, workflow, keyspace string) (
 		message,
 		tags,
 		workflow_type, 
-		workflow_sub_type
+		workflow_sub_type,
+		defer_secondary_keys
 	from _vt.vreplication`
 	results, err := wr.runVexec(ctx, workflow, keyspace, query, false)
 	if err != nil {
@@ -573,8 +583,8 @@ func (wr *Wrangler) getStreams(ctx context.Context, workflow, keyspace string) (
 	ctx, cancel := context.WithTimeout(ctx, topo.RemoteOperationTimeout)
 	defer cancel()
 	var sourceKeyspace string
-	sourceShards := sets.NewString()
-	targetShards := sets.NewString()
+	sourceShards := sets.New[string]()
+	targetShards := sets.New[string]()
 	for primary, result := range results {
 		var rsrStatus []*ReplicationStatus
 		nqr := sqltypes.Proto3ToResult(result).Named()
@@ -591,6 +601,24 @@ func (wr *Wrangler) getStreams(ctx context.Context, workflow, keyspace string) (
 			sourceKeyspace = sk
 			sourceShards.Insert(status.Bls.Shard)
 			rsrStatus = append(rsrStatus, status)
+
+			// Only show the OnDDL setting if it's not the default of 0/IGNORE.
+			if status.Bls.OnDdl != binlogdatapb.OnDDLAction_IGNORE {
+				rsr.OnDDL = binlogdatapb.OnDDLAction_name[int32(status.Bls.OnDdl)]
+				// Unset it in the proto so that we do not show the
+				// low-level enum int in the JSON marshalled output
+				// as e.g. `"on_ddl": 1` is not meaningful or helpful
+				// for the end user and we instead show the mapped
+				// string value using the top-level "OnDDL" json key.
+				// Note: this is done here only because golang does
+				// not currently support setting json tags in proto
+				// declarations so that I could request it always be
+				// ommitted from marshalled JSON output:
+				// https://github.com/golang/protobuf/issues/52
+				status.Bls.OnDdl = 0
+			}
+
+			rsr.DeferSecondaryKeys = status.deferSecondaryKeys
 
 			if status.Message == workflow2.Frozen {
 				rsr.Frozen = true
@@ -641,11 +669,11 @@ func (wr *Wrangler) getStreams(ctx context.Context, workflow, keyspace string) (
 	}
 	rsr.SourceLocation = ReplicationLocation{
 		Keyspace: sourceKeyspace,
-		Shards:   sourceShards.List(),
+		Shards:   sets.List(sourceShards),
 	}
 	rsr.TargetLocation = ReplicationLocation{
 		Keyspace: keyspace,
-		Shards:   targetShards.List(),
+		Shards:   sets.List(targetShards),
 	}
 
 	return &rsr, nil
@@ -668,7 +696,7 @@ func (wr *Wrangler) ListAllWorkflows(ctx context.Context, keyspace string, activ
 	if err != nil {
 		return nil, err
 	}
-	workflowsSet := sets.NewString()
+	workflowsSet := sets.New[string]()
 	for _, result := range results {
 		if len(result.Rows) == 0 {
 			continue
@@ -681,7 +709,7 @@ func (wr *Wrangler) ListAllWorkflows(ctx context.Context, keyspace string, activ
 			}
 		}
 	}
-	workflows := workflowsSet.List()
+	workflows := sets.List(workflowsSet)
 	return workflows, nil
 }
 
@@ -729,7 +757,8 @@ func (wr *Wrangler) printWorkflowList(keyspace string, workflows []string) {
 
 func (wr *Wrangler) getCopyState(ctx context.Context, tablet *topo.TabletInfo, id int64) ([]copyState, error) {
 	var cs []copyState
-	query := fmt.Sprintf("select table_name, lastpk from _vt.copy_state where vrepl_id = %d", id)
+	query := fmt.Sprintf("select table_name, lastpk from _vt.copy_state where vrepl_id = %d and id in (select max(id) from _vt.copy_state where vrepl_id = %d group by vrepl_id, table_name)",
+		id, id)
 	qr, err := wr.VReplicationExec(ctx, tablet.Alias, query)
 	if err != nil {
 		return nil, err

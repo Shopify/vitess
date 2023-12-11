@@ -37,14 +37,14 @@ type BindVars map[string]struct{}
 // treated as distinct.
 func Normalize(stmt Statement, reserved *ReservedVars, bindVars map[string]*querypb.BindVariable) error {
 	nz := newNormalizer(reserved, bindVars)
-	_ = Rewrite(stmt, nz.WalkStatement, nil)
+	_ = SafeRewrite(stmt, nz.walkStatementDown, nz.walkStatementUp)
 	return nz.err
 }
 
 type normalizer struct {
 	bindVars  map[string]*querypb.BindVariable
 	reserved  *ReservedVars
-	vals      map[string]string
+	vals      map[Literal]string
 	err       error
 	inDerived bool
 }
@@ -53,30 +53,43 @@ func newNormalizer(reserved *ReservedVars, bindVars map[string]*querypb.BindVari
 	return &normalizer{
 		bindVars: bindVars,
 		reserved: reserved,
-		vals:     make(map[string]string),
+		vals:     make(map[Literal]string),
 	}
 }
 
-// WalkStatement is the top level walk function.
+// walkStatementUp is one half of the top level walk function.
+func (nz *normalizer) walkStatementUp(cursor *Cursor) bool {
+	if nz.err != nil {
+		return false
+	}
+	node, isLiteral := cursor.Node().(*Literal)
+	if !isLiteral {
+		return true
+	}
+	nz.convertLiteral(node, cursor)
+	return nz.err == nil // only continue if we haven't found any errors
+}
+
+// walkStatementDown is the top level walk function.
 // If it encounters a Select, it switches to a mode
 // where variables are deduped.
-func (nz *normalizer) WalkStatement(cursor *Cursor) bool {
-	switch node := cursor.Node().(type) {
+func (nz *normalizer) walkStatementDown(node, parent SQLNode) bool {
+	switch node := node.(type) {
 	// no need to normalize the statement types
-	case *Set, *Show, *Begin, *Commit, *Rollback, *Savepoint, *SetTransaction, DDLStatement, *SRollback, *Release, *OtherAdmin, *OtherRead:
+	case *Set, *Show, *Begin, *Commit, *Rollback, *Savepoint, DDLStatement, *SRollback, *Release, *OtherAdmin, *OtherRead:
 		return false
 	case *Select:
-		_, isDerived := cursor.Parent().(*DerivedTable)
+		_, isDerived := parent.(*DerivedTable)
 		var tmp bool
 		tmp, nz.inDerived = nz.inDerived, isDerived
-		_ = Rewrite(node, nz.WalkSelect, nil)
+		_ = SafeRewrite(node, nz.walkDownSelect, nz.walkUpSelect)
 		// Don't continue
 		nz.inDerived = tmp
 		return false
-	case *Literal:
-		nz.convertLiteral(node, cursor)
 	case *ComparisonExpr:
 		nz.convertComparison(node)
+	case *UpdateExpr:
+		nz.convertUpdateExpr(node)
 	case *ColName, TableName:
 		// Common node types that never contain Literal or ListArgs but create a lot of object
 		// allocations.
@@ -87,24 +100,25 @@ func (nz *normalizer) WalkStatement(cursor *Cursor) bool {
 	return nz.err == nil // only continue if we haven't found any errors
 }
 
-// WalkSelect normalizes the AST in Select mode.
-func (nz *normalizer) WalkSelect(cursor *Cursor) bool {
-	switch node := cursor.Node().(type) {
+// walkDownSelect normalizes the AST in Select mode.
+func (nz *normalizer) walkDownSelect(node, parent SQLNode) bool {
+	switch node := node.(type) {
 	case *Select:
-		_, isDerived := cursor.Parent().(*DerivedTable)
+		_, isDerived := parent.(*DerivedTable)
 		if !isDerived {
 			return true
 		}
 		var tmp bool
 		tmp, nz.inDerived = nz.inDerived, isDerived
-		_ = Rewrite(node, nz.WalkSelect, nil)
+		// initiating a new AST walk here means that we might change something while walking down on the tree,
+		// but since we are only changing literals, we can be safe that we are not changing the SELECT struct,
+		// only something much further down, and that should be safe
+		_ = SafeRewrite(node, nz.walkDownSelect, nz.walkUpSelect)
 		// Don't continue
 		nz.inDerived = tmp
 		return false
 	case SelectExprs:
 		return !nz.inDerived
-	case *Literal:
-		nz.convertLiteralDedup(node, cursor)
 	case *ComparisonExpr:
 		nz.convertComparison(node)
 	case *FramePoint:
@@ -114,12 +128,30 @@ func (nz *normalizer) WalkSelect(cursor *Cursor) bool {
 		// Common node types that never contain Literals or ListArgs but create a lot of object
 		// allocations.
 		return false
-	case OrderBy, GroupBy:
-		// do not make a bind var for order by column_position
-		return false
 	case *ConvertType:
 		// we should not rewrite the type description
 		return false
+	}
+	return nz.err == nil // only continue if we haven't found any errors
+}
+
+// walkUpSelect normalizes the Literals in Select mode.
+func (nz *normalizer) walkUpSelect(cursor *Cursor) bool {
+	if nz.err != nil {
+		return false
+	}
+	node, isLiteral := cursor.Node().(*Literal)
+	if !isLiteral {
+		return true
+	}
+	parent := cursor.Parent()
+	switch parent.(type) {
+	case *Order, GroupBy:
+		return false
+	case *Limit:
+		nz.convertLiteral(node, cursor)
+	default:
+		nz.convertLiteralDedup(node, cursor)
 	}
 	return nz.err == nil // only continue if we haven't found any errors
 }
@@ -158,20 +190,11 @@ func (nz *normalizer) convertLiteralDedup(node *Literal, cursor *Cursor) {
 	}
 
 	// Check if there's a bindvar for that value already.
-	var key string
-	if bval.Type == sqltypes.VarBinary || bval.Type == sqltypes.VarChar {
-		// Prefixing strings with "'" ensures that a string
-		// and number that have the same representation don't
-		// collide.
-		key = "'" + node.Val
-	} else {
-		key = node.Val
-	}
-	bvname, ok := nz.vals[key]
+	bvname, ok := nz.vals[*node]
 	if !ok {
 		// If there's no such bindvar, make a new one.
 		bvname = nz.reserved.nextUnusedVar()
-		nz.vals[key] = bvname
+		nz.vals[*node] = bvname
 		nz.bindVars[bvname] = bval
 	}
 
@@ -203,13 +226,69 @@ func (nz *normalizer) convertLiteral(node *Literal, cursor *Cursor) {
 // and iterate on converting each individual value into separate
 // bind vars.
 func (nz *normalizer) convertComparison(node *ComparisonExpr) {
-	if node.Operator != InOp && node.Operator != NotInOp {
-		return
+	switch node.Operator {
+	case InOp, NotInOp:
+		nz.rewriteInComparisons(node)
+	default:
+		nz.rewriteOtherComparisons(node)
 	}
+}
+
+func (nz *normalizer) rewriteOtherComparisons(node *ComparisonExpr) {
+	newR := nz.parameterize(node.Left, node.Right)
+	if newR != nil {
+		node.Right = newR
+	}
+}
+
+func (nz *normalizer) parameterize(left, right Expr) Expr {
+	col, ok := left.(*ColName)
+	if !ok {
+		return nil
+	}
+	lit, ok := right.(*Literal)
+	if !ok {
+		return nil
+	}
+	err := validateLiteral(lit)
+	if err != nil {
+		nz.err = err
+		return nil
+	}
+
+	bval := SQLToBindvar(lit)
+	if bval == nil {
+		return nil
+	}
+	bvname := nz.decideBindVarName(lit, col, bval)
+	return Argument(bvname)
+}
+
+func (nz *normalizer) decideBindVarName(lit *Literal, col *ColName, bval *querypb.BindVariable) string {
+	if len(lit.Val) <= 256 {
+		// first we check if we already have a bindvar for this value. if we do, we re-use that bindvar name
+		bvname, ok := nz.vals[*lit]
+		if ok {
+			return bvname
+		}
+	}
+
+	// If there's no such bindvar, or we have a big value, make a new one.
+	// Big values are most likely not for vindexes.
+	// We save a lot of CPU because we avoid building
+	bvname := nz.reserved.ReserveColName(col)
+	nz.vals[*lit] = bvname
+	nz.bindVars[bvname] = bval
+
+	return bvname
+}
+
+func (nz *normalizer) rewriteInComparisons(node *ComparisonExpr) {
 	tupleVals, ok := node.Right.(ValTuple)
 	if !ok {
 		return
 	}
+
 	// The RHS is a tuple of values.
 	// Make a list bindvar.
 	bvals := &querypb.BindVariable{
@@ -229,6 +308,13 @@ func (nz *normalizer) convertComparison(node *ComparisonExpr) {
 	nz.bindVars[bvname] = bvals
 	// Modify RHS to be a list bindvar.
 	node.Right = ListArg(bvname)
+}
+
+func (nz *normalizer) convertUpdateExpr(node *UpdateExpr) {
+	newR := nz.parameterize(node.Name, node.Expr)
+	if newR != nil {
+		node.Expr = newR
+	}
 }
 
 func SQLToBindvar(node SQLNode) *querypb.BindVariable {

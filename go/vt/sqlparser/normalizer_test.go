@@ -43,10 +43,10 @@ func TestNormalize(t *testing.T) {
 		outbv   map[string]*querypb.BindVariable
 	}{{
 		// str val
-		in:      "select * from t where v1 = 'aa'",
-		outstmt: "select * from t where v1 = :bv1",
+		in:      "select * from t where foobar = 'aa'",
+		outstmt: "select * from t where foobar = :foobar",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.StringBindVariable("aa"),
+			"foobar": sqltypes.StringBindVariable("aa"),
 		},
 	}, {
 		// placeholder
@@ -67,47 +67,47 @@ func TestNormalize(t *testing.T) {
 		},
 	}, {
 		// int val
-		in:      "select * from t where v1 = 1",
-		outstmt: "select * from t where v1 = :bv1",
+		in:      "select * from t where foobar = 1",
+		outstmt: "select * from t where foobar = :foobar",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.Int64BindVariable(1),
+			"foobar": sqltypes.Int64BindVariable(1),
 		},
 	}, {
 		// float val
-		in:      "select * from t where v1 = 1.2",
-		outstmt: "select * from t where v1 = :bv1",
+		in:      "select * from t where foobar = 1.2",
+		outstmt: "select * from t where foobar = :foobar",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.DecimalBindVariable(1.2),
+			"foobar": sqltypes.DecimalBindVariable(1.2),
 		},
 	}, {
 		// multiple vals
-		in:      "select * from t where v1 = 1.2 and v2 = 2",
-		outstmt: "select * from t where v1 = :bv1 and v2 = :bv2",
+		in:      "select * from t where foo = 1.2 and bar = 2",
+		outstmt: "select * from t where foo = :foo and bar = :bar",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.DecimalBindVariable(1.2),
-			"bv2": sqltypes.Int64BindVariable(2),
+			"foo": sqltypes.DecimalBindVariable(1.2),
+			"bar": sqltypes.Int64BindVariable(2),
 		},
 	}, {
 		// bv collision
-		in:      "select * from t where v1 = :bv1 and v2 = 1",
-		outstmt: "select * from t where v1 = :bv1 and v2 = :bv2",
+		in:      "select * from t where foo = :bar and bar = 12",
+		outstmt: "select * from t where foo = :bar and bar = :bar1",
 		outbv: map[string]*querypb.BindVariable{
-			"bv2": sqltypes.Int64BindVariable(1),
+			"bar1": sqltypes.Int64BindVariable(12),
 		},
 	}, {
 		// val reuse
-		in:      "select * from t where v1 = 1 and v2 = 1",
-		outstmt: "select * from t where v1 = :bv1 and v2 = :bv1",
+		in:      "select * from t where foo = 1 and bar = 1",
+		outstmt: "select * from t where foo = :foo and bar = :foo",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.Int64BindVariable(1),
+			"foo": sqltypes.Int64BindVariable(1),
 		},
 	}, {
 		// ints and strings are different
-		in:      "select * from t where v1 = 1 and v2 = '1'",
-		outstmt: "select * from t where v1 = :bv1 and v2 = :bv2",
+		in:      "select * from t where foo = 1 and bar = '1'",
+		outstmt: "select * from t where foo = :foo and bar = :bar",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.Int64BindVariable(1),
-			"bv2": sqltypes.StringBindVariable("1"),
+			"foo": sqltypes.Int64BindVariable(1),
+			"bar": sqltypes.StringBindVariable("1"),
 		},
 	}, {
 		// val should not be reused for non-select statements
@@ -120,33 +120,31 @@ func TestNormalize(t *testing.T) {
 	}, {
 		// val should be reused only in subqueries of DMLs
 		in:      "update a set v1=(select 5 from t), v2=5, v3=(select 5 from t), v4=5",
-		outstmt: "update a set v1 = (select :bv1 from t), v2 = :bv2, v3 = (select :bv1 from t), v4 = :bv3",
+		outstmt: "update a set v1 = (select :bv1 from t), v2 = :bv1, v3 = (select :bv1 from t), v4 = :bv1",
 		outbv: map[string]*querypb.BindVariable{
 			"bv1": sqltypes.Int64BindVariable(5),
-			"bv2": sqltypes.Int64BindVariable(5),
-			"bv3": sqltypes.Int64BindVariable(5),
 		},
 	}, {
 		// list vars should work for DMLs also
 		in:      "update a set v1=5 where v2 in (1, 4, 5)",
-		outstmt: "update a set v1 = :bv1 where v2 in ::bv2",
+		outstmt: "update a set v1 = :v1 where v2 in ::bv1",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.Int64BindVariable(5),
-			"bv2": sqltypes.TestBindVariable([]any{1, 4, 5}),
+			"v1":  sqltypes.Int64BindVariable(5),
+			"bv1": sqltypes.TestBindVariable([]any{1, 4, 5}),
 		},
 	}, {
 		// Hex number values should work for selects
-		in:      "select * from t where v1 = 0x1234",
-		outstmt: "select * from t where v1 = :bv1",
+		in:      "select * from t where foo = 0x1234",
+		outstmt: "select * from t where foo = :foo",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.HexNumBindVariable([]byte("0x1234")),
+			"foo": sqltypes.HexNumBindVariable([]byte("0x1234")),
 		},
 	}, {
 		// Hex encoded string values should work for selects
-		in:      "select * from t where v1 = x'7b7d'",
-		outstmt: "select * from t where v1 = :bv1",
+		in:      "select * from t where foo = x'7b7d'",
+		outstmt: "select * from t where foo = :foo",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.HexValBindVariable([]byte("x'7b7d'")),
+			"foo": sqltypes.HexValBindVariable([]byte("x'7b7d'")),
 		},
 	}, {
 		// Ensure that hex notation bind vars work with collation based conversions
@@ -157,24 +155,24 @@ func TestNormalize(t *testing.T) {
 		},
 	}, {
 		// Hex number values should work for DMLs
-		in:      "update a set v1 = 0x12",
-		outstmt: "update a set v1 = :bv1",
+		in:      "update a set foo = 0x12",
+		outstmt: "update a set foo = :foo",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.HexNumBindVariable([]byte("0x12")),
+			"foo": sqltypes.HexNumBindVariable([]byte("0x12")),
 		},
 	}, {
-		// Bin value does not convert
-		in:      "select * from t where v1 = b'11'",
-		outstmt: "select * from t where v1 = :bv1",
+		// Bin values work fine
+		in:      "select * from t where foo = b'11'",
+		outstmt: "select * from t where foo = :foo",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.HexNumBindVariable([]byte("0x3")),
+			"foo": sqltypes.HexNumBindVariable([]byte("0x3")),
 		},
 	}, {
 		// Bin value does not convert for DMLs
 		in:      "update a set v1 = b'11'",
-		outstmt: "update a set v1 = :bv1",
+		outstmt: "update a set v1 = :v1",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.HexNumBindVariable([]byte("0x3")),
+			"v1": sqltypes.HexNumBindVariable([]byte("0x3")),
 		},
 	}, {
 		// ORDER BY column_position
@@ -182,24 +180,38 @@ func TestNormalize(t *testing.T) {
 		outstmt: "select a, b from t order by 1 asc",
 		outbv:   map[string]*querypb.BindVariable{},
 	}, {
+		// GROUP BY column_position
+		in:      "select a, b from t group by 1",
+		outstmt: "select a, b from t group by 1",
+		outbv:   map[string]*querypb.BindVariable{},
+	}, {
+		// ORDER BY with literal inside complex expression
+		in:      "select a, b from t order by field(a,1,2,3) asc",
+		outstmt: "select a, b from t order by field(a, :bv1, :bv2, :bv3) asc",
+		outbv: map[string]*querypb.BindVariable{
+			"bv1": sqltypes.Int64BindVariable(1),
+			"bv2": sqltypes.Int64BindVariable(2),
+			"bv3": sqltypes.Int64BindVariable(3),
+		},
+	}, {
 		// ORDER BY variable
 		in:      "select a, b from t order by c asc",
 		outstmt: "select a, b from t order by c asc",
 		outbv:   map[string]*querypb.BindVariable{},
 	}, {
 		// Values up to len 256 will reuse.
-		in:      fmt.Sprintf("select * from t where v1 = '%256s' and v2 = '%256s'", "a", "a"),
-		outstmt: "select * from t where v1 = :bv1 and v2 = :bv1",
+		in:      fmt.Sprintf("select * from t where foo = '%256s' and bar = '%256s'", "a", "a"),
+		outstmt: "select * from t where foo = :foo and bar = :foo",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.StringBindVariable(fmt.Sprintf("%256s", "a")),
+			"foo": sqltypes.StringBindVariable(fmt.Sprintf("%256s", "a")),
 		},
 	}, {
 		// Values greater than len 256 will not reuse.
-		in:      fmt.Sprintf("select * from t where v1 = '%257s' and v2 = '%257s'", "b", "b"),
-		outstmt: "select * from t where v1 = :bv1 and v2 = :bv2",
+		in:      fmt.Sprintf("select * from t where foo = '%257s' and bar = '%257s'", "b", "b"),
+		outstmt: "select * from t where foo = :foo and bar = :bar",
 		outbv: map[string]*querypb.BindVariable{
-			"bv1": sqltypes.StringBindVariable(fmt.Sprintf("%257s", "b")),
-			"bv2": sqltypes.StringBindVariable(fmt.Sprintf("%257s", "b")),
+			"foo": sqltypes.StringBindVariable(fmt.Sprintf("%257s", "b")),
+			"bar": sqltypes.StringBindVariable(fmt.Sprintf("%257s", "b")),
 		},
 	}, {
 		// bad int
@@ -227,6 +239,13 @@ func TestNormalize(t *testing.T) {
 		// IN clause with vals
 		in:      "select * from t where v1 in (1, '2')",
 		outstmt: "select * from t where v1 in ::bv1",
+		outbv: map[string]*querypb.BindVariable{
+			"bv1": sqltypes.TestBindVariable([]any{1, "2"}),
+		},
+	}, {
+		// EXPLAIN queries
+		in:      "explain select * from t where v1 in (1, '2')",
+		outstmt: "explain select * from t where v1 in ::bv1",
 		outbv: map[string]*querypb.BindVariable{
 			"bv1": sqltypes.TestBindVariable([]any{1, "2"}),
 		},
@@ -285,6 +304,31 @@ func TestNormalize(t *testing.T) {
 			"bv1": sqltypes.ValueBindVariable(sqltypes.MakeTrusted(sqltypes.Datetime, []byte("2022-08-06 17:05:12"))),
 		},
 	}, {
+		// TimestampVal should also be normalized
+		in:      `explain select comms_by_companies.* from comms_by_companies where comms_by_companies.id = 'rjve634shXzaavKHbAH16ql6OrxJ' limit 1,1`,
+		outstmt: `explain select comms_by_companies.* from comms_by_companies where comms_by_companies.id = :comms_by_companies_id limit :bv1, :bv2`,
+		outbv: map[string]*querypb.BindVariable{
+			"bv1":                   sqltypes.Int64BindVariable(1),
+			"bv2":                   sqltypes.Int64BindVariable(1),
+			"comms_by_companies_id": sqltypes.StringBindVariable("rjve634shXzaavKHbAH16ql6OrxJ"),
+		},
+	}, {
+		// Int leading with zero should also be normalized
+		in:      `select * from t where zipcode = 01001900`,
+		outstmt: `select * from t where zipcode = :zipcode`,
+		outbv: map[string]*querypb.BindVariable{
+			"zipcode": sqltypes.ValueBindVariable(sqltypes.MakeTrusted(sqltypes.Int64, []byte("01001900"))),
+		},
+	}, {
+		// literals in limit and offset should not reuse bindvars
+		in:      `select * from t where id = 10 limit 10 offset 10`,
+		outstmt: `select * from t where id = :id limit :bv1, :bv2`,
+		outbv: map[string]*querypb.BindVariable{
+			"bv1": sqltypes.Int64BindVariable(10),
+			"bv2": sqltypes.Int64BindVariable(10),
+			"id":  sqltypes.Int64BindVariable(10),
+		},
+	}, {
 		// we don't want to replace literals on the select expressions of a derived table
 		// these expressions can be referenced from the outside,
 		// and changing them to bindvars can change the meaning of the query
@@ -292,6 +336,14 @@ func TestNormalize(t *testing.T) {
 		in:      `select * from (select 12) as t`,
 		outstmt: `select * from (select 12 from dual) as t`,
 		outbv:   map[string]*querypb.BindVariable{},
+	}, {
+		// HexVal and Int should not share a bindvar just because they have the same value
+		in:      `select * from t where v1 = x'31' and v2 = 31`,
+		outstmt: `select * from t where v1 = :v1 and v2 = :v2`,
+		outbv: map[string]*querypb.BindVariable{
+			"v1": sqltypes.HexValBindVariable([]byte("x'31'")),
+			"v2": sqltypes.Int64BindVariable(31),
+		},
 	}}
 	for _, tc := range testcases {
 		t.Run(tc.in, func(t *testing.T) {
@@ -449,7 +501,17 @@ func BenchmarkNormalizeVTGate(b *testing.B) {
 
 			// Normalize if possible and retry.
 			if CanNormalize(stmt) || MustRewriteAST(stmt, false) {
-				result, err := PrepareAST(stmt, NewReservedVars("vtg", reservedVars), bindVars, true, keyspace, SQLSelectLimitUnset, "", nil)
+				result, err := PrepareAST(
+					stmt,
+					NewReservedVars("vtg", reservedVars),
+					bindVars,
+					true,
+					keyspace,
+					SQLSelectLimitUnset,
+					"",
+					nil, /*sysvars*/
+					nil, /*views*/
+				)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -538,9 +600,9 @@ JOIN warehouse%d AS w ON c_w_id=w_id
 WHERE w_id = %d
 AND c_d_id = %d
 AND c_id = %d`,
-		`SELECT d_next_o_id, d_tax 
-FROM district%d 
-WHERE d_w_id = %d 
+		`SELECT d_next_o_id, d_tax
+FROM district%d
+WHERE d_w_id = %d
 AND d_id = %d FOR UPDATE`,
 		`UPDATE district%d
 SET d_next_o_id = %d
@@ -550,58 +612,58 @@ WHERE d_id = %d AND d_w_id= %d`,
 VALUES (%d,%d,%d,%d,NOW(),%d,%d)`,
 		`INSERT INTO new_orders%d (no_o_id, no_d_id, no_w_id)
 VALUES (%d,%d,%d)`,
-		`SELECT i_price, i_name, i_data 
+		`SELECT i_price, i_name, i_data
 FROM item%d
 WHERE i_id = %d`,
-		`SELECT s_quantity, s_data, s_dist_%s s_dist 
-FROM stock%d  
+		`SELECT s_quantity, s_data, s_dist_%s s_dist
+FROM stock%d
 WHERE s_i_id = %d AND s_w_id= %d FOR UPDATE`,
 		`UPDATE stock%d
 SET s_quantity = %d
-WHERE s_i_id = %d 
+WHERE s_i_id = %d
 AND s_w_id= %d`,
 		`INSERT INTO order_line%d
 (ol_o_id, ol_d_id, ol_w_id, ol_number, ol_i_id, ol_supply_w_id, ol_quantity, ol_amount, ol_dist_info)
 VALUES (%d,%d,%d,%d,%d,%d,%d,%d,'%s')`,
 		`UPDATE warehouse%d
-SET w_ytd = w_ytd + %d 
+SET w_ytd = w_ytd + %d
 WHERE w_id = %d`,
 		`SELECT w_street_1, w_street_2, w_city, w_state, w_zip, w_name
 FROM warehouse%d
 WHERE w_id = %d`,
-		`UPDATE district%d 
-SET d_ytd = d_ytd + %d 
-WHERE d_w_id = %d 
+		`UPDATE district%d
+SET d_ytd = d_ytd + %d
+WHERE d_w_id = %d
 AND d_id= %d`,
-		`SELECT d_street_1, d_street_2, d_city, d_state, d_zip, d_name 
+		`SELECT d_street_1, d_street_2, d_city, d_state, d_zip, d_name
 FROM district%d
-WHERE d_w_id = %d 
+WHERE d_w_id = %d
 AND d_id = %d`,
 		`SELECT count(c_id) namecnt
 FROM customer%d
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id= %d
 AND c_last='%s'`,
 		`SELECT c_first, c_middle, c_last, c_street_1,
 c_street_2, c_city, c_state, c_zip, c_phone,
 c_credit, c_credit_lim, c_discount, c_balance, c_ytd_payment, c_since
 FROM customer%d
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id= %d
 AND c_id=%d FOR UPDATE`,
 		`SELECT c_data
 FROM customer%d
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id=%d
 AND c_id= %d`,
 		`UPDATE customer%d
 SET c_balance=%f, c_ytd_payment=%f, c_data='%s'
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id=%d
 AND c_id=%d`,
 		`UPDATE customer%d
 SET c_balance=%f, c_ytd_payment=%f
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id=%d
 AND c_id=%d`,
 		`INSERT INTO history%d
@@ -609,71 +671,71 @@ AND c_id=%d`,
 VALUES (%d,%d,%d,%d,%d,NOW(),%d,'%s')`,
 		`SELECT count(c_id) namecnt
 FROM customer%d
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id= %d
 AND c_last='%s'`,
 		`SELECT c_balance, c_first, c_middle, c_id
 FROM customer%d
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id= %d
 AND c_last='%s' ORDER BY c_first`,
 		`SELECT c_balance, c_first, c_middle, c_last
 FROM customer%d
-WHERE c_w_id = %d 
+WHERE c_w_id = %d
 AND c_d_id=%d
 AND c_id=%d`,
 		`SELECT o_id, o_carrier_id, o_entry_d
-FROM orders%d 
-WHERE o_w_id = %d 
-AND o_d_id = %d 
-AND o_c_id = %d 
+FROM orders%d
+WHERE o_w_id = %d
+AND o_d_id = %d
+AND o_c_id = %d
 ORDER BY o_id DESC`,
 		`SELECT ol_i_id, ol_supply_w_id, ol_quantity, ol_amount, ol_delivery_d
 FROM order_line%d WHERE ol_w_id = %d AND ol_d_id = %d  AND ol_o_id = %d`,
 		`SELECT no_o_id
-FROM new_orders%d 
-WHERE no_d_id = %d 
-AND no_w_id = %d 
+FROM new_orders%d
+WHERE no_d_id = %d
+AND no_w_id = %d
 ORDER BY no_o_id ASC LIMIT 1 FOR UPDATE`,
 		`DELETE FROM new_orders%d
-WHERE no_o_id = %d 
-AND no_d_id = %d  
+WHERE no_o_id = %d
+AND no_d_id = %d
 AND no_w_id = %d`,
 		`SELECT o_c_id
-FROM orders%d 
-WHERE o_id = %d 
-AND o_d_id = %d 
+FROM orders%d
+WHERE o_id = %d
+AND o_d_id = %d
 AND o_w_id = %d`,
-		`UPDATE orders%d 
+		`UPDATE orders%d
 SET o_carrier_id = %d
-WHERE o_id = %d 
-AND o_d_id = %d 
+WHERE o_id = %d
+AND o_d_id = %d
 AND o_w_id = %d`,
-		`UPDATE order_line%d 
+		`UPDATE order_line%d
 SET ol_delivery_d = NOW()
-WHERE ol_o_id = %d 
-AND ol_d_id = %d 
+WHERE ol_o_id = %d
+AND ol_d_id = %d
 AND ol_w_id = %d`,
 		`SELECT SUM(ol_amount) sm
-FROM order_line%d 
-WHERE ol_o_id = %d 
-AND ol_d_id = %d 
+FROM order_line%d
+WHERE ol_o_id = %d
+AND ol_d_id = %d
 AND ol_w_id = %d`,
-		`UPDATE customer%d 
+		`UPDATE customer%d
 SET c_balance = c_balance + %f,
 c_delivery_cnt = c_delivery_cnt + 1
-WHERE c_id = %d 
-AND c_d_id = %d 
+WHERE c_id = %d
+AND c_d_id = %d
 AND c_w_id = %d`,
-		`SELECT d_next_o_id 
+		`SELECT d_next_o_id
 FROM district%d
 WHERE d_id = %d AND d_w_id= %d`,
 		`SELECT COUNT(DISTINCT(s.s_i_id))
 FROM stock%d AS s
-JOIN order_line%d AS ol ON ol.ol_w_id=s.s_w_id AND ol.ol_i_id=s.s_i_id			
-WHERE ol.ol_w_id = %d 
+JOIN order_line%d AS ol ON ol.ol_w_id=s.s_w_id AND ol.ol_i_id=s.s_i_id
+WHERE ol.ol_w_id = %d
 AND ol.ol_d_id = %d
-AND ol.ol_o_id < %d 
+AND ol.ol_o_id < %d
 AND ol.ol_o_id >= %d
 AND s.s_w_id= %d
 AND s.s_quantity < %d `,
@@ -684,7 +746,7 @@ AND ol_o_id < %d AND ol_o_id >= %d`,
 WHERE s_w_id = %d AND s_i_id = %d
 AND s_quantity < %d`,
 		`SELECT min(no_o_id) mo
-FROM new_orders%d 
+FROM new_orders%d
 WHERE no_w_id = %d AND no_d_id = %d`,
 		`SELECT o_id FROM orders%d o, (SELECT o_c_id,o_w_id,o_d_id,count(distinct o_id) FROM orders%d WHERE o_w_id=%d AND o_d_id=%d AND o_id > 2100 AND o_id < %d GROUP BY o_c_id,o_d_id,o_w_id having count( distinct o_id) > 1 limit 1) t WHERE t.o_w_id=o.o_w_id and t.o_d_id=o.o_d_id and t.o_c_id=o.o_c_id limit 1 `,
 		`DELETE FROM order_line%d where ol_w_id=%d AND ol_d_id=%d AND ol_o_id=%d`,
@@ -729,7 +791,17 @@ func benchmarkNormalization(b *testing.B, sqls []string) {
 			}
 
 			reservedVars := NewReservedVars("vtg", reserved)
-			_, err = PrepareAST(stmt, reservedVars, make(map[string]*querypb.BindVariable), true, "keyspace0", SQLSelectLimitUnset, "", nil)
+			_, err = PrepareAST(
+				stmt,
+				reservedVars,
+				make(map[string]*querypb.BindVariable),
+				true,
+				"keyspace0",
+				SQLSelectLimitUnset,
+				"",
+				nil,
+				nil,
+			)
 			if err != nil {
 				b.Fatal(err)
 			}

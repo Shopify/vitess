@@ -88,13 +88,28 @@ const (
 	FullTextKeyUnifyStatements
 )
 
+const (
+	TableCharsetCollateStrict int = iota
+	TableCharsetCollateIgnoreEmpty
+	TableCharsetCollateIgnoreAlways
+)
+
+const (
+	AlterTableAlgorithmStrategyNone int = iota
+	AlterTableAlgorithmStrategyInstant
+	AlterTableAlgorithmStrategyInplace
+	AlterTableAlgorithmStrategyCopy
+)
+
 // DiffHints is an assortment of rules for diffing entities
 type DiffHints struct {
-	StrictIndexOrdering     bool
-	AutoIncrementStrategy   int
-	RangeRotationStrategy   int
-	ConstraintNamesStrategy int
-	ColumnRenameStrategy    int
-	TableRenameStrategy     int
-	FullTextKeyStrategy     int
+	StrictIndexOrdering         bool
+	AutoIncrementStrategy       int
+	RangeRotationStrategy       int
+	ConstraintNamesStrategy     int
+	ColumnRenameStrategy        int
+	TableRenameStrategy         int
+	FullTextKeyStrategy         int
+	TableCharsetCollateStrategy int
+	AlterTableAlgorithmStrategy int
 }

@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	querypb "vitess.io/vitess/go/vt/proto/query"
 )
 
 const (
@@ -42,8 +44,10 @@ const (
 	DirectiveAllowHashJoin = "ALLOW_HASH_JOIN"
 	// DirectiveQueryPlanner lets the user specify per query which planner should be used
 	DirectiveQueryPlanner = "PLANNER"
-	// DirectiveVtexplainRunDMLQueries tells explain format = vtexplain that it is okay to also run the query.
-	DirectiveVtexplainRunDMLQueries = "EXECUTE_DML_QUERIES"
+	// DirectiveVExplainRunDMLQueries tells vexplain queries/all that it is okay to also run the query.
+	DirectiveVExplainRunDMLQueries = "EXECUTE_DML_QUERIES"
+	// DirectiveConsolidator enables the query consolidator.
+	DirectiveConsolidator = "CONSOLIDATOR"
 )
 
 func isNonSpace(r rune) bool {
@@ -204,6 +208,15 @@ const commentDirectivePreamble = "/*vt+"
 // conveyed in query comments
 type CommentDirectives struct {
 	m map[string]string
+}
+
+// ResetDirectives sets the _directives member to `nil`, which means the next call to Directives()
+// will re-evaluate it.
+func (c *ParsedComments) ResetDirectives() {
+	if c == nil {
+		return
+	}
+	c._directives = nil
 }
 
 // Directives parses the comment list for any execution directives
@@ -368,4 +381,27 @@ func AllowScatterDirective(stmt Statement) bool {
 		comments = stmt.Comments
 	}
 	return comments != nil && comments.Directives().IsSet(DirectiveAllowScatter)
+}
+
+// Consolidator returns the consolidator option.
+func Consolidator(stmt Statement) querypb.ExecuteOptions_Consolidator {
+	var comments *ParsedComments
+	switch stmt := stmt.(type) {
+	case *Select:
+		comments = stmt.Comments
+	default:
+		return querypb.ExecuteOptions_CONSOLIDATOR_UNSPECIFIED
+	}
+	if comments == nil {
+		return querypb.ExecuteOptions_CONSOLIDATOR_UNSPECIFIED
+	}
+	directives := comments.Directives()
+	strv, isSet := directives.GetString(DirectiveConsolidator, "")
+	if !isSet {
+		return querypb.ExecuteOptions_CONSOLIDATOR_UNSPECIFIED
+	}
+	if i32v, ok := querypb.ExecuteOptions_Consolidator_value["CONSOLIDATOR_"+strings.ToUpper(strv)]; ok {
+		return querypb.ExecuteOptions_Consolidator(i32v)
+	}
+	return querypb.ExecuteOptions_CONSOLIDATOR_UNSPECIFIED
 }

@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.vitess</groupId>
     <artifactId>vitess-parent</artifactId>
-    <version>15.0.3</version>
+    <version>16.0.6</version>
   </parent>
   <artifactId>vitess-grpc-client</artifactId>
 
@@ -107,7 +107,7 @@
 		  <useManifestOnlyJar>false</useManifestOnlyJar>
 		  <useSystemClassLoader>true</useSystemClassLoader>
         </configuration>
-      </plugin>	  
+      </plugin>
       <plugin>
         <groupId>org.xolstice.maven.plugins</groupId>
         <artifactId>protobuf-maven-plugin</artifactId>

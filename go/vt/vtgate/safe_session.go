@@ -26,6 +26,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"vitess.io/vitess/go/vt/sqlparser"
+	"vitess.io/vitess/go/vt/srvtopo"
+	"vitess.io/vitess/go/vt/sysvars"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
 
@@ -146,30 +148,70 @@ func NewAutocommitSession(sessn *vtgatepb.Session) *SafeSession {
 func (session *SafeSession) ResetTx() {
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	session.mustRollback = false
-	session.autocommitState = notAutocommittable
-	session.Session.InTransaction = false
-	session.commitOrder = vtgatepb.CommitOrder_NORMAL
-	session.Savepoints = nil
-	if !session.Session.InReservedConn {
-		session.ShardSessions = nil
-		session.PreSessions = nil
-		session.PostSessions = nil
+	session.resetCommonLocked()
+	// If settings pools is enabled on the vttablet.
+	// This variable will be true but there will not be a shard session with reserved connection id.
+	// So, we should check the shard session and not just this variable.
+	if session.Session.InReservedConn {
+		allSessions := append(session.ShardSessions, append(session.PreSessions, session.PostSessions...)...)
+		for _, ss := range allSessions {
+			if ss.ReservedId != 0 {
+				// found that reserved connection exists.
+				// abort here, we should keep the shard sessions.
+				return
+			}
+		}
 	}
+	session.ShardSessions = nil
+	session.PreSessions = nil
+	session.PostSessions = nil
 }
 
 // Reset clears the session
 func (session *SafeSession) Reset() {
 	session.mu.Lock()
 	defer session.mu.Unlock()
+	session.resetCommonLocked()
+	session.ShardSessions = nil
+	session.PreSessions = nil
+	session.PostSessions = nil
+}
+
+// ResetAll resets the shard sessions and lock session.
+func (session *SafeSession) ResetAll() {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.resetCommonLocked()
+	session.ShardSessions = nil
+	session.PreSessions = nil
+	session.PostSessions = nil
+	session.LockSession = nil
+	session.AdvisoryLock = nil
+}
+
+func (session *SafeSession) resetCommonLocked() {
 	session.mustRollback = false
 	session.autocommitState = notAutocommittable
 	session.Session.InTransaction = false
 	session.commitOrder = vtgatepb.CommitOrder_NORMAL
 	session.Savepoints = nil
-	session.ShardSessions = nil
-	session.PreSessions = nil
-	session.PostSessions = nil
+	if session.Options != nil {
+		session.Options.TransactionAccessMode = nil
+	}
+}
+
+// SetQueryTimeout sets the query timeout
+func (session *SafeSession) SetQueryTimeout(queryTimeout int64) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.QueryTimeout = queryTimeout
+}
+
+// GetQueryTimeout gets the query timeout
+func (session *SafeSession) GetQueryTimeout() int64 {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.QueryTimeout
 }
 
 // SavePoints returns the save points of the session. It's safe to use concurrently
@@ -368,11 +410,11 @@ func (session *SafeSession) AppendOrUpdate(shardSession *vtgatepb.Session_ShardS
 	// that needs to be stored as shard session.
 	if session.autocommitState == autocommitted && shardSession.TransactionId != 0 {
 		// Should be unreachable
-		return vterrors.New(vtrpcpb.Code_INTERNAL, "[BUG] unexpected 'autocommitted' state in transaction")
+		return vterrors.VT13001("unexpected 'autocommitted' state in transaction")
 	}
 	if !(session.Session.InTransaction || session.Session.InReservedConn) {
 		// Should be unreachable
-		return vterrors.New(vtrpcpb.Code_INTERNAL, "[BUG] current session neither in transaction nor in reserved connection")
+		return vterrors.VT13001("current session is neither in transaction nor in reserved connection")
 	}
 	session.autocommitState = notAutocommittable
 
@@ -494,20 +536,26 @@ func (session *SafeSession) SetSystemVariable(name string, expr string) {
 	session.SystemVariables[name] = expr
 }
 
-// GetSystemVariables takes a visitor function that will save each system variables of the session
+// GetSystemVariables takes a visitor function that will receive each MySQL system variable in the session.
+// This function will only yield system variables which apply to MySQL itself; Vitess-aware system variables
+// will be skipped.
 func (session *SafeSession) GetSystemVariables(f func(k string, v string)) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	for k, v := range session.SystemVariables {
+		if sysvars.IsVitessAware(k) {
+			continue
+		}
 		f(k, v)
 	}
 }
 
-// HasSystemVariables returns whether the session has system variables set or not.
-func (session *SafeSession) HasSystemVariables() bool {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-	return len(session.SystemVariables) > 0
+// HasSystemVariables returns whether the session has system variables that would apply to MySQL
+func (session *SafeSession) HasSystemVariables() (found bool) {
+	session.GetSystemVariables(func(_ string, _ string) {
+		found = true
+	})
+	return
 }
 
 // SetOptions sets the options
@@ -540,18 +588,19 @@ func (session *SafeSession) SetReservedConn(reservedConn bool) {
 
 // SetPreQueries returns the prequeries that need to be run when reserving a connection
 func (session *SafeSession) SetPreQueries() []string {
-	session.mu.Lock()
-	defer session.mu.Unlock()
+	// extract keys
+	var keys []string
+	sysVars := make(map[string]string)
+	session.GetSystemVariables(func(k string, v string) {
+		keys = append(keys, k)
+		sysVars[k] = v
+	})
 
-	if len(session.SystemVariables) == 0 {
+	// if not system variables to set, return
+	if len(keys) == 0 {
 		return nil
 	}
 
-	// extract keys
-	keys := make([]string, 0, len(session.SystemVariables))
-	for k := range session.SystemVariables {
-		keys = append(keys, k)
-	}
 	// sort the keys
 	sort.Strings(keys)
 
@@ -560,10 +609,10 @@ func (session *SafeSession) SetPreQueries() []string {
 	first := true
 	for _, k := range keys {
 		if first {
-			preQuery.WriteString(fmt.Sprintf("set @@%s = %s", k, session.SystemVariables[k]))
+			preQuery.WriteString(fmt.Sprintf("set %s = %s", k, sysVars[k]))
 			first = false
 		} else {
-			preQuery.WriteString(fmt.Sprintf(", @@%s = %s", k, session.SystemVariables[k]))
+			preQuery.WriteString(fmt.Sprintf(", %s = %s", k, sysVars[k]))
 		}
 	}
 	return []string{preQuery.String()}
@@ -603,22 +652,6 @@ func (session *SafeSession) InLockSession() bool {
 func (session *SafeSession) ResetLock() {
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	session.LockSession = nil
-	session.AdvisoryLock = nil
-}
-
-// ResetAll resets the shard sessions and lock session.
-func (session *SafeSession) ResetAll() {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-	session.mustRollback = false
-	session.autocommitState = notAutocommittable
-	session.Session.InTransaction = false
-	session.commitOrder = vtgatepb.CommitOrder_NORMAL
-	session.Savepoints = nil
-	session.ShardSessions = nil
-	session.PreSessions = nil
-	session.PostSessions = nil
 	session.LockSession = nil
 	session.AdvisoryLock = nil
 }
@@ -725,13 +758,13 @@ func removeShard(tabletAlias *topodatapb.TabletAlias, sessions []*vtgatepb.Sessi
 	for i, session := range sessions {
 		if proto.Equal(session.TabletAlias, tabletAlias) {
 			if session.TransactionId != 0 {
-				return nil, vterrors.New(vtrpcpb.Code_INTERNAL, "[BUG] removing shard session when in transaction")
+				return nil, vterrors.VT13001("removing shard session when in transaction")
 			}
 			idx = i
 		}
 	}
 	if idx == -1 {
-		return nil, vterrors.New(vtrpcpb.Code_INTERNAL, "[BUG] tried to remove missing shard")
+		return nil, vterrors.VT13001("tried to remove missing shard")
 	}
 	return append(sessions[:idx], sessions[idx+1:]...), nil
 }
@@ -867,7 +900,7 @@ func (session *SafeSession) EnableLogging() {
 	session.logging = &executeLogger{}
 }
 
-func (l *executeLogger) log(target *querypb.Target, query string, begin bool, bv map[string]*querypb.BindVariable) {
+func (l *executeLogger) log(primitive engine.Primitive, target *querypb.Target, gateway srvtopo.Gateway, query string, begin bool, bv map[string]*querypb.BindVariable) {
 	if l == nil {
 		return
 	}
@@ -877,12 +910,11 @@ func (l *executeLogger) log(target *querypb.Target, query string, begin bool, bv
 	l.lastID++
 	if begin {
 		l.entries = append(l.entries, engine.ExecuteEntry{
-			ID:         id,
-			Keyspace:   target.Keyspace,
-			Shard:      target.Shard,
-			TabletType: target.TabletType,
-			Cell:       target.Cell,
-			Query:      "begin",
+			ID:        id,
+			Target:    target,
+			Gateway:   gateway,
+			Query:     "begin",
+			FiredFrom: primitive,
 		})
 	}
 	ast, err := sqlparser.Parse(query)
@@ -899,12 +931,11 @@ func (l *executeLogger) log(target *querypb.Target, query string, begin bool, bv
 	}
 
 	l.entries = append(l.entries, engine.ExecuteEntry{
-		ID:         id,
-		Keyspace:   target.Keyspace,
-		Shard:      target.Shard,
-		TabletType: target.TabletType,
-		Cell:       target.Cell,
-		Query:      q,
+		ID:        id,
+		Target:    target,
+		Gateway:   gateway,
+		Query:     q,
+		FiredFrom: primitive,
 	})
 }
 

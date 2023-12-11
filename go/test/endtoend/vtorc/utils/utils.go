@@ -36,10 +36,12 @@ import (
 	"vitess.io/vitess/go/vt/log"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/topo"
+	"vitess.io/vitess/go/vt/topo/topoproto"
+
+	// Register topo implementations.
 	_ "vitess.io/vitess/go/vt/topo/consultopo"
 	_ "vitess.io/vitess/go/vt/topo/etcd2topo"
 	_ "vitess.io/vitess/go/vt/topo/k8stopo"
-	"vitess.io/vitess/go/vt/topo/topoproto"
 	_ "vitess.io/vitess/go/vt/topo/zk2topo"
 )
 
@@ -943,4 +945,27 @@ func WaitForSuccessfulRecoveryCount(t *testing.T, vtorcInstance *cluster.VTOrcPr
 	successfulRecoveriesMap := vars["SuccessfulRecoveries"].(map[string]interface{})
 	successCount := successfulRecoveriesMap[recoveryName]
 	assert.EqualValues(t, countExpected, successCount)
+}
+
+// PrintVTOrcLogsOnFailure prints the VTOrc logs on failure of the test.
+// This function is supposed to be called as the first defer command from the vtorc tests.
+func PrintVTOrcLogsOnFailure(t *testing.T, clusterInstance *cluster.LocalProcessCluster) {
+	// If the test has not failed, then we don't need to print anything.
+	if !t.Failed() {
+		return
+	}
+
+	log.Errorf("Printing VTOrc logs")
+	for _, vtorc := range clusterInstance.VTOrcProcesses {
+		if vtorc == nil || vtorc.LogFileName == "" {
+			continue
+		}
+		filePath := path.Join(vtorc.LogDir, vtorc.LogFileName)
+		log.Errorf("Printing file - %s", filePath)
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			log.Errorf("Error while reading the file - %v", err)
+		}
+		log.Errorf("%s", string(content))
+	}
 }

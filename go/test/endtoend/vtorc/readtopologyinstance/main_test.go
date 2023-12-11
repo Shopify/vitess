@@ -40,6 +40,7 @@ func TestReadTopologyInstanceBufferable(t *testing.T) {
 	defer func() {
 		clusterInfo.ClusterInstance.Teardown()
 	}()
+	defer utils.PrintVTOrcLogsOnFailure(t, clusterInfo.ClusterInstance)
 	keyspace := &clusterInfo.ClusterInstance.Keyspaces[0]
 	shard0 := &keyspace.Shards[0]
 	oldArgs := os.Args
@@ -103,7 +104,6 @@ func TestReadTopologyInstanceBufferable(t *testing.T) {
 	assert.False(t, primaryInstance.HasReplicationCredentials)
 	assert.Equal(t, primaryInstance.ReplicationIOThreadState, inst.ReplicationThreadStateNoThread)
 	assert.Equal(t, primaryInstance.ReplicationSQLThreadState, inst.ReplicationThreadStateNoThread)
-	assert.Equal(t, fmt.Sprintf("%v:%v", keyspace.Name, shard0.Name), primaryInstance.ClusterName)
 
 	// insert an errant GTID in the replica
 	_, err = utils.RunSQL(t, "insert into vt_insert_test(id, msg) values (10173, 'test 178342')", replica, "vt_ks")
@@ -147,7 +147,7 @@ func TestReadTopologyInstanceBufferable(t *testing.T) {
 	assert.Equal(t, replicaInstance.ReadBinlogCoordinates.LogFile, primaryInstance.SelfBinlogCoordinates.LogFile)
 	assert.Greater(t, replicaInstance.ReadBinlogCoordinates.LogPos, int64(0))
 	assert.Equal(t, replicaInstance.ExecBinlogCoordinates.LogFile, primaryInstance.SelfBinlogCoordinates.LogFile)
-	assert.LessOrEqual(t, replicaInstance.ExecBinlogCoordinates.LogPos, replicaInstance.ReadBinlogCoordinates.LogPos)
+	assert.Greater(t, replicaInstance.ExecBinlogCoordinates.LogPos, int64(0))
 	assert.Contains(t, replicaInstance.RelaylogCoordinates.LogFile, fmt.Sprintf("vt-0000000%d-relay", replica.TabletUID))
 	assert.Greater(t, replicaInstance.RelaylogCoordinates.LogPos, int64(0))
 	assert.Empty(t, replicaInstance.LastIOError)
@@ -159,5 +159,4 @@ func TestReadTopologyInstanceBufferable(t *testing.T) {
 	assert.False(t, replicaInstance.HasReplicationFilters)
 	assert.LessOrEqual(t, int(replicaInstance.SecondsBehindPrimary.Int64), 1)
 	assert.False(t, replicaInstance.AllowTLS)
-	assert.Equal(t, fmt.Sprintf("%v:%v", keyspace.Name, shard0.Name), replicaInstance.ClusterName)
 }

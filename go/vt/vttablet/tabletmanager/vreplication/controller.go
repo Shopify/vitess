@@ -40,6 +40,13 @@ import (
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 )
 
+const (
+	// How many times to retry tablet selection before we
+	// give up and return an error message that the user
+	// can see and act upon if needed.
+	tabletPickerRetries = 5
+)
+
 // controller is created by Engine. Members are initialized upfront.
 // There is no mutex within a controller becaust its members are
 // either read-only or self-synchronized.
@@ -61,7 +68,7 @@ type controller struct {
 	// The following fields are updated after start. So, they need synchronization.
 	sourceTablet sync2.AtomicString
 
-	lastWorkflowError *lastError
+	lastWorkflowError *vterrors.LastError
 }
 
 // newController creates a new controller. Unless a stream is explicitly 'Stopped',
@@ -88,7 +95,7 @@ func newController(ctx context.Context, params map[string]string, dbClientFactor
 	}
 	ct.id = uint32(id)
 	ct.workflow = params["workflow"]
-	ct.lastWorkflowError = newLastError(fmt.Sprintf("VReplication controller %d for workflow %q", ct.id, ct.workflow), maxTimeToRetryError)
+	ct.lastWorkflowError = vterrors.NewLastError(fmt.Sprintf("VReplication controller %d for workflow %q", ct.id, ct.workflow), maxTimeToRetryError)
 
 	state := params["state"]
 	blpStats.State.Set(state)
@@ -196,17 +203,14 @@ func (ct *controller) runBlp(ctx context.Context) (err error) {
 	if err := dbClient.Connect(); err != nil {
 		return vterrors.Wrap(err, "can't connect to database")
 	}
-	for _, query := range withDDLInitialQueries {
-		if _, err := withDDL.Exec(ctx, query, dbClient.ExecuteFetch, dbClient.ExecuteFetch); err != nil {
-			log.Errorf("cannot apply withDDL init query '%s': %v", query, err)
-		}
-	}
 	defer dbClient.Close()
 
 	var tablet *topodatapb.Tablet
 	if ct.source.GetExternalMysql() == "" {
 		log.Infof("trying to find a tablet eligible for vreplication. stream id: %v", ct.id)
-		tablet, err = ct.tabletPicker.PickForStreaming(ctx)
+		tpCtx, tpCancel := context.WithTimeout(ctx, discovery.GetTabletPickerRetryDelay()*tabletPickerRetries)
+		defer tpCancel()
+		tablet, err = ct.tabletPicker.PickForStreaming(tpCtx)
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -267,10 +271,10 @@ func (ct *controller) runBlp(ctx context.Context) (err error) {
 
 		vr := newVReplicator(ct.id, ct.source, vsClient, ct.blpStats, dbClient, ct.mysqld, ct.vre)
 		err = vr.Replicate(ctx)
-		ct.lastWorkflowError.record(err)
+		ct.lastWorkflowError.Record(err)
 		// If this is a mysql error that we know needs manual intervention OR
 		// we cannot identify this as non-recoverable, but it has persisted beyond the retry limit (maxTimeToRetryError)
-		if isUnrecoverableError(err) || !ct.lastWorkflowError.shouldRetry() {
+		if isUnrecoverableError(err) || !ct.lastWorkflowError.ShouldRetry() {
 			log.Errorf("vreplication stream %d going into error state due to %+v", ct.id, err)
 			if errSetState := vr.setState(binlogplayer.BlpError, err.Error()); errSetState != nil {
 				return err // yes, err and not errSetState.

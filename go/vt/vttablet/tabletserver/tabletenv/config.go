@@ -122,6 +122,7 @@ func registerTabletEnvFlags(fs *pflag.FlagSet) {
 	SecondsVar(fs, &currentConfig.OlapReadPool.TimeoutSeconds, "queryserver-config-stream-pool-timeout", defaultConfig.OlapReadPool.TimeoutSeconds, "query server stream pool timeout (in seconds), it is how long vttablet waits for a connection from the stream pool. If set to 0 (default) then there is no timeout.")
 	SecondsVar(fs, &currentConfig.TxPool.TimeoutSeconds, "queryserver-config-txpool-timeout", defaultConfig.TxPool.TimeoutSeconds, "query server transaction pool timeout, it is how long vttablet waits if tx pool is full")
 	SecondsVar(fs, &currentConfig.OltpReadPool.IdleTimeoutSeconds, "queryserver-config-idle-timeout", defaultConfig.OltpReadPool.IdleTimeoutSeconds, "query server idle timeout (in seconds), vttablet manages various mysql connection pools. This config means if a connection has not been used in given idle timeout, this connection will be removed from pool. This effectively manages number of connection objects and optimize the pool performance.")
+	SecondsVar(fs, &currentConfig.OltpReadPool.MaxLifetimeSeconds, "queryserver-config-pool-conn-max-lifetime", defaultConfig.OltpReadPool.MaxLifetimeSeconds, "query server connection max lifetime (in seconds), vttablet manages various mysql connection pools. This config means if a connection has lived at least this long, it connection will be removed from pool upon the next time it is returned to the pool.")
 	fs.IntVar(&currentConfig.OltpReadPool.MaxWaiters, "queryserver-config-query-pool-waiter-cap", defaultConfig.OltpReadPool.MaxWaiters, "query server query pool waiter limit, this is the maximum number of queries that can be queued waiting to get a connection")
 	fs.IntVar(&currentConfig.OlapReadPool.MaxWaiters, "queryserver-config-stream-pool-waiter-cap", defaultConfig.OlapReadPool.MaxWaiters, "query server stream pool waiter limit, this is the maximum number of streaming queries that can be queued waiting to get a connection")
 	fs.IntVar(&currentConfig.TxPool.MaxWaiters, "queryserver-config-txpool-waiter-cap", defaultConfig.TxPool.MaxWaiters, "query server transaction pool waiter limit, this is the maximum number of transactions that can be queued waiting to get a connection")
@@ -181,6 +182,8 @@ func registerTabletEnvFlags(fs *pflag.FlagSet) {
 
 	fs.Int64Var(&currentConfig.RowStreamer.MaxInnoDBTrxHistLen, "vreplication_copy_phase_max_innodb_history_list_length", 1000000, "The maximum InnoDB transaction history that can exist on a vstreamer (source) before starting another round of copying rows. This helps to limit the impact on the source tablet.")
 	fs.Int64Var(&currentConfig.RowStreamer.MaxMySQLReplLagSecs, "vreplication_copy_phase_max_mysql_replication_lag", 43200, "The maximum MySQL replication lag (in seconds) that can exist on a vstreamer (source) before starting another round of copying rows. This helps to limit the impact on the source tablet.")
+
+	fs.BoolVar(&currentConfig.EnableViews, "queryserver-enable-views", false, "Enable views support in vttablet.")
 }
 
 var (
@@ -194,6 +197,8 @@ func Init() {
 	// TODO(sougou): Make a decision on whether this should be global or per-pool.
 	currentConfig.OlapReadPool.IdleTimeoutSeconds = currentConfig.OltpReadPool.IdleTimeoutSeconds
 	currentConfig.TxPool.IdleTimeoutSeconds = currentConfig.OltpReadPool.IdleTimeoutSeconds
+	currentConfig.OlapReadPool.MaxLifetimeSeconds = currentConfig.OltpReadPool.MaxLifetimeSeconds
+	currentConfig.TxPool.MaxLifetimeSeconds = currentConfig.OltpReadPool.MaxLifetimeSeconds
 
 	if enableHotRowProtection {
 		if enableHotRowProtectionDryRun {
@@ -312,6 +317,7 @@ type TabletConfig struct {
 	TxThrottlerHealthCheckCells []string `json:"-"`
 
 	EnableLagThrottler bool `json:"-"`
+	EnableTableGC      bool `json:"-"` // can be turned off programmatically by tests
 
 	TransactionLimitConfig `json:"-"`
 
@@ -320,6 +326,8 @@ type TabletConfig struct {
 	EnableSettingsPool       bool `json:"-"`
 
 	RowStreamer RowStreamerConfig `json:"rowStreamer,omitempty"`
+
+	EnableViews bool `json:"-"`
 }
 
 // ConnPoolConfig contains the config for a conn pool.
@@ -327,6 +335,7 @@ type ConnPoolConfig struct {
 	Size               int     `json:"size,omitempty"`
 	TimeoutSeconds     Seconds `json:"timeoutSeconds,omitempty"`
 	IdleTimeoutSeconds Seconds `json:"idleTimeoutSeconds,omitempty"`
+	MaxLifetimeSeconds Seconds `json:"maxLifetimeSeconds,omitempty"`
 	PrefillParallelism int     `json:"prefillParallelism,omitempty"`
 	MaxWaiters         int     `json:"maxWaiters,omitempty"`
 }
@@ -561,6 +570,7 @@ var defaultConfig = TabletConfig{
 
 	EnforceStrictTransTables: true,
 	EnableOnlineDDL:          true,
+	EnableTableGC:            true,
 
 	RowStreamer: RowStreamerConfig{
 		MaxInnoDBTrxHistLen: 1000000,

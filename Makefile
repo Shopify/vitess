@@ -46,7 +46,7 @@ export REWRITER=go/vt/sqlparser/rewriter.go
 # Since we are not using this Makefile for compilation, limiting parallelism will not increase build time.
 .NOTPARALLEL:
 
-.PHONY: all build install test clean unit_test unit_test_cover unit_test_race integration_test proto proto_banner site_test site_integration_test docker_bootstrap docker_test docker_unit_test java_test reshard_tests e2e_test e2e_test_race minimaltools tools web_bootstrap web_build web_start generate_ci_workflows
+.PHONY: all build install test clean unit_test unit_test_cover unit_test_race integration_test proto proto_banner site_test site_integration_test docker_bootstrap docker_test docker_unit_test java_test reshard_tests e2e_test e2e_test_race minimaltools tools generate_ci_workflows
 
 all: build
 
@@ -155,9 +155,6 @@ install-testing: build
 	cp "$${VTROOT}/bin/"{mysqlctld,mysqlctl,vtcombo,vttestserver} "$${PREFIX}/bin/"
 	# config files
 	cp -R config "$${PREFIX}/"
-	# vtctld web UI files
-	mkdir -p "$${PREFIX}/web/vtctld2"
-	cp -R web/vtctld2/app "$${PREFIX}/web/vtctld2"
 
 vtctldclient: go/vt/proto/vtctlservice/vtctlservice.pb.go
 	make -C go/vt/vtctl/vtctldclient
@@ -168,27 +165,22 @@ parser:
 demo:
 	go install ./examples/demo/demo.go
 
-codegen: asthelpergen sizegen parser astfmtgen
+codegen: asthelpergen sizegen parser
 
 visitor: asthelpergen
 	echo "make visitor has been replaced by make asthelpergen"
 
 asthelpergen:
-	go run ./go/tools/asthelpergen/main \
-		--in ./go/vt/sqlparser \
-		--iface vitess.io/vitess/go/vt/sqlparser.SQLNode \
-		--except "*ColName"
+	go generate ./go/vt/sqlparser/...
 
 sizegen:
 	go run ./go/tools/sizegen/sizegen.go \
 		--in ./go/... \
 		--gen vitess.io/vitess/go/pools.Setting \
+		--gen vitess.io/vitess/go/vt/schema.DDLStrategySetting \
 		--gen vitess.io/vitess/go/vt/vtgate/engine.Plan \
 		--gen vitess.io/vitess/go/vt/vttablet/tabletserver.TabletPlan \
 		--gen vitess.io/vitess/go/sqltypes.Result
-
-astfmtgen:
-	go run ./go/tools/astfmtgen/main.go vitess.io/vitess/go/vt/sqlparser/...
 
 # To pass extra flags, run test.go manually.
 # For example: go run test.go -docker=false -- --extra-flag
@@ -281,9 +273,9 @@ $(PROTO_GO_OUTS): minimaltools install_protoc-gen-go proto/*.proto
 # Please read docker/README.md to understand the different available images.
 
 # This rule builds the bootstrap images for all flavors.
-DOCKER_IMAGES_FOR_TEST = mariadb mariadb103 mysql57 mysql80 percona57 percona80
+DOCKER_IMAGES_FOR_TEST = mysql57 mysql80 percona57 percona80
 DOCKER_IMAGES = common $(DOCKER_IMAGES_FOR_TEST)
-BOOTSTRAP_VERSION=11.2
+BOOTSTRAP_VERSION=14.10
 ensure_bootstrap_version:
 	find docker/ -type f -exec sed -i "s/^\(ARG bootstrap_version\)=.*/\1=${BOOTSTRAP_VERSION}/" {} \;
 	sed -i 's/\(^.*flag.String(\"bootstrap-version\",\) *\"[^\"]\+\"/\1 \"${BOOTSTRAP_VERSION}\"/' test.go
@@ -319,7 +311,7 @@ endef
 docker_base:
 	${call build_docker_image,docker/base/Dockerfile,vitess/base}
 
-DOCKER_BASE_SUFFIX = mysql80 mariadb mariadb103 percona57 percona80
+DOCKER_BASE_SUFFIX = mysql80 percona57 percona80
 DOCKER_BASE_TARGETS = $(addprefix docker_base_, $(DOCKER_BASE_SUFFIX))
 $(DOCKER_BASE_TARGETS): docker_base_%:
 	${call build_docker_image,docker/base/Dockerfile.$*,vitess/base:$*}
@@ -329,12 +321,15 @@ docker_base_all: docker_base $(DOCKER_BASE_TARGETS)
 docker_lite:
 	${call build_docker_image,docker/lite/Dockerfile,vitess/lite}
 
-DOCKER_LITE_SUFFIX = mysql57 ubi7.mysql57 mysql80 ubi7.mysql80 mariadb mariadb103 percona57 ubi7.percona57 percona80 ubi7.percona80 alpine testing ubi8.mysql80 ubi8.arm64.mysql80
+DOCKER_LITE_SUFFIX = mysql57 ubi7.mysql57 mysql80 ubi7.mysql80 percona57 ubi7.percona57 percona80 ubi7.percona80 testing ubi8.mysql80 ubi8.arm64.mysql80
 DOCKER_LITE_TARGETS = $(addprefix docker_lite_,$(DOCKER_LITE_SUFFIX))
 $(DOCKER_LITE_TARGETS): docker_lite_%:
 	${call build_docker_image,docker/lite/Dockerfile.$*,vitess/lite:$*}
 
 docker_lite_all: docker_lite $(DOCKER_LITE_TARGETS)
+
+docker_lite_push:
+	for i in $(DOCKER_LITE_SUFFIX); do echo "pushing lite image: $$i"; docker push vitess/lite:$$i || exit 1; done
 
 docker_local:
 	${call build_docker_image,docker/local/Dockerfile,vitess/local}
@@ -353,7 +348,7 @@ $(DOCKER_VTTESTSERVER_TARGETS): docker_vttestserver_%:
 docker_vttestserver: $(DOCKER_VTTESTSERVER_TARGETS)
 # This rule loads the working copy of the code into a bootstrap image,
 # and then runs the tests inside Docker.
-# Example: $ make docker_test flavor=mariadb
+# Example: $ make docker_test flavor=mysql80
 docker_test:
 	go run test.go -flavor $(flavor)
 
@@ -374,8 +369,11 @@ release: docker_base
 	echo "git push origin v$(VERSION)"
 	echo "Also, don't forget the upload releases/v$(VERSION).tar.gz file to GitHub releases"
 
-do_release:
-	./tools/do_release.sh
+create_release:
+	./tools/create_release.sh
+
+back_to_dev_mode:
+	./tools/back_to_dev_mode.sh
 
 tools:
 	echo $$(date): Installing dependencies
@@ -446,22 +444,6 @@ client_go_gen: install_k8s-code-generator
 	mv vitess.io/vitess/go/vt/topo/k8stopo/apis/topo/v1beta1/zz_generated.deepcopy.go go/vt/topo/k8stopo/apis/topo/v1beta1/zz_generated.deepcopy.go
 	rm -rf vitess.io/vitess/go/vt/topo/k8stopo/
 
-# Check prerequisites and install dependencies
-web_bootstrap:
-	./tools/web_bootstrap.sh
-
-# Do a production build of the vtctld UI.
-# This target needs to be manually run every time any file within web/vtctld2/app
-# is modified to regenerate assets.
-web_build: web_bootstrap
-	./tools/web_build.sh
-
-# Start a front-end dev server with hot reloading on http://localhost:4200.
-# This expects that you have a vtctld API server running on http://localhost:15000.
-# Following the local Docker install guide is recommended: https://vitess.io/docs/get-started/local-docker/
-web_start: web_bootstrap
-	cd web/vtctld2 && npm run start
-
 vtadmin_web_install:
 	cd web/vtadmin && npm install
 
@@ -480,9 +462,6 @@ vtadmin_authz_testgen:
 # is changed by adding a new test to an existing shard. Any new or modified files need to be committed into git
 generate_ci_workflows:
 	cd test && go run ci_workflow_gen.go && cd ..
-
-release-notes:
-	go run ./go/tools/release-notes --from "$(FROM)" --to "$(TO)" --version "$(VERSION)" --summary "$(SUMMARY)"
 
 install_kubectl_kind:
 	./tools/get_kubectl_kind.sh

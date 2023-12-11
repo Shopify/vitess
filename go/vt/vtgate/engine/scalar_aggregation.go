@@ -133,8 +133,8 @@ func (sa *ScalarAggregate) TryStreamExecute(ctx context.Context, vcursor VCursor
 	var current []sqltypes.Value
 	var curDistincts []sqltypes.Value
 	var fields []*querypb.Field
-	fieldsSent := false
 	var mu sync.Mutex
+	fieldsSent := !wantfields
 
 	err := vcursor.StreamExecutePrimitive(ctx, sa.Input, bindVars, wantfields, func(result *sqltypes.Result) error {
 		// as the underlying primitive call is not sync
@@ -213,7 +213,8 @@ func createEmptyValueFor(opcode AggregateOpcode) (sqltypes.Value, error) {
 		AggregateSumDistinct,
 		AggregateSum,
 		AggregateMin,
-		AggregateMax:
+		AggregateMax,
+		AggregateRandom:
 		return sqltypes.NULL, nil
 
 	}

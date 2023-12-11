@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"vitess.io/vitess/go/vt/servenv"
+
 	"google.golang.org/protobuf/proto"
 
 	"vitess.io/vitess/go/sync2"
@@ -126,6 +128,7 @@ type stateManager struct {
 	// checkMySQLThrottler ensures that CheckMysql
 	// doesn't get spammed.
 	checkMySQLThrottler *sync2.Semaphore
+	checkMySQLRunning   sync2.AtomicBool
 
 	timebombDuration      time.Duration
 	unhealthyThreshold    sync2.AtomicDuration
@@ -305,17 +308,21 @@ func (sm *stateManager) recheckState() bool {
 	return false
 }
 
-// CheckMySQL verifies that we can connect to mysql.
+// checkMySQL verifies that we can connect to mysql.
 // If it fails, then we shutdown the service and initiate
 // the retry loop.
-func (sm *stateManager) CheckMySQL() {
+func (sm *stateManager) checkMySQL() {
 	if !sm.checkMySQLThrottler.TryAcquire() {
 		return
 	}
+	log.Infof("CheckMySQL started")
+	sm.checkMySQLRunning.Set(true)
 	go func() {
 		defer func() {
 			time.Sleep(1 * time.Second)
+			sm.checkMySQLRunning.Set(false)
 			sm.checkMySQLThrottler.Release()
+			log.Infof("CheckMySQL finished")
 		}()
 
 		err := sm.qe.IsMySQLReachable()
@@ -346,6 +353,14 @@ func (sm *stateManager) setWantState(stateWanted servingState) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.wantState = stateWanted
+}
+
+// isCheckMySQLRunning returns 1 if CheckMySQL function is in progress
+func (sm *stateManager) isCheckMySQLRunning() int64 {
+	if sm.checkMySQLRunning.Get() {
+		return 1
+	}
+	return 0
 }
 
 // StopService shuts down sm. If the shutdown doesn't complete
@@ -428,6 +443,7 @@ func (sm *stateManager) servePrimary() error {
 		return err
 	}
 
+	sm.hs.MakePrimary(true)
 	sm.rt.MakePrimary()
 	sm.tracker.Open()
 	// We instantly kill all stateful queries to allow for
@@ -452,6 +468,7 @@ func (sm *stateManager) unservePrimary() error {
 		return err
 	}
 
+	sm.hs.MakePrimary(false)
 	sm.rt.MakePrimary()
 	sm.setState(topodatapb.TabletType_PRIMARY, StateNotServing)
 	return nil
@@ -468,6 +485,7 @@ func (sm *stateManager) serveNonPrimary(wantTabletType topodatapb.TabletType) er
 	sm.messager.Close()
 	sm.tracker.Close()
 	sm.se.MakeNonPrimary()
+	sm.hs.MakeNonPrimary()
 
 	if err := sm.connect(wantTabletType); err != nil {
 		return err
@@ -485,6 +503,7 @@ func (sm *stateManager) unserveNonPrimary(wantTabletType topodatapb.TabletType) 
 	sm.unserveCommon()
 
 	sm.se.MakeNonPrimary()
+	sm.hs.MakeNonPrimary()
 
 	if err := sm.connect(wantTabletType); err != nil {
 		return err
@@ -585,6 +604,9 @@ func (sm *stateManager) setTimeBomb() chan struct{} {
 
 // setState changes the state and logs the event.
 func (sm *stateManager) setState(tabletType topodatapb.TabletType, state servingState) {
+	defer func() {
+		log.Infof("Tablet Init took %d ms", time.Since(servenv.GetInitStartTime()).Milliseconds())
+	}()
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if tabletType == topodatapb.TabletType_UNKNOWN {

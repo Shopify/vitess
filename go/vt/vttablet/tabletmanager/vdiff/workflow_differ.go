@@ -94,9 +94,19 @@ func (wd *workflowDiffer) reconcileExtraRows(dr *DiffReport, maxExtraRowsToCompa
 }
 
 func (wd *workflowDiffer) diffTable(ctx context.Context, dbClient binlogplayer.DBClient, td *tableDiffer) error {
+	defer func() {
+		if td.shardStreamsCancel != nil {
+			td.shardStreamsCancel()
+		}
+		// Wait for all the shard streams to finish before returning.
+		td.wgShardStreamers.Wait()
+	}()
+
 	select {
 	case <-ctx.Done():
 		return vterrors.Errorf(vtrpcpb.Code_CANCELED, "context has expired")
+	case <-wd.ct.done:
+		return vterrors.Errorf(vtrpcpb.Code_CANCELED, "vdiff was stopped")
 	default:
 	}
 
@@ -108,7 +118,7 @@ func (wd *workflowDiffer) diffTable(ctx context.Context, dbClient binlogplayer.D
 		return err
 	}
 	log.Infof("Table initialization done on table %s for vdiff %s", td.table.Name, wd.ct.uuid)
-	dr, err := td.diff(ctx, &wd.opts.CoreOptions.MaxRows, wd.opts.ReportOptions.DebugQuery, false, wd.opts.CoreOptions.MaxExtraRowsToCompare)
+	dr, err := td.diff(ctx, wd.opts.CoreOptions.MaxRows, wd.opts.ReportOptions.DebugQuery, wd.opts.ReportOptions.OnlyPks, wd.opts.CoreOptions.MaxExtraRowsToCompare)
 	if err != nil {
 		log.Errorf("Encountered an error diffing table %s for vdiff %s: %v", td.table.Name, wd.ct.uuid, err)
 		return err
@@ -141,6 +151,8 @@ func (wd *workflowDiffer) diff(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return vterrors.Errorf(vtrpcpb.Code_CANCELED, "context has expired")
+	case <-wd.ct.done:
+		return vterrors.Errorf(vtrpcpb.Code_CANCELED, "vdiff was stopped")
 	default:
 	}
 
@@ -160,6 +172,8 @@ func (wd *workflowDiffer) diff(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return vterrors.Errorf(vtrpcpb.Code_CANCELED, "context has expired")
+		case <-wd.ct.done:
+			return vterrors.Errorf(vtrpcpb.Code_CANCELED, "vdiff was stopped")
 		default:
 		}
 		query := fmt.Sprintf(sqlGetVDiffTable, wd.ct.id, encodeString(td.table.Name))
@@ -293,11 +307,11 @@ func (wd *workflowDiffer) initVDiffTables(dbClient binlogplayer.DBClient) error 
 		}
 	}
 	query := fmt.Sprintf(sqlGetAllTableRows, encodeString(wd.ct.vde.dbName), tableIn.String())
-	qr, err := dbClient.ExecuteFetch(query, -1)
+	isqr, err := dbClient.ExecuteFetch(query, -1)
 	if err != nil {
 		return err
 	}
-	for _, row := range qr.Named().Rows {
+	for _, row := range isqr.Named().Rows {
 		tableName, _ := row.ToString("table_name")
 		tableRows, _ := row.ToInt64("table_rows")
 

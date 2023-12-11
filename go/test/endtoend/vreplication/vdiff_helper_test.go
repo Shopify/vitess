@@ -65,7 +65,7 @@ func vdiff1(t *testing.T, ksWorkflow, cells string) {
 
 func doVDiff1(t *testing.T, ksWorkflow, cells string) {
 	t.Run(fmt.Sprintf("vdiff1 %s", ksWorkflow), func(t *testing.T) {
-		output, err := vc.VtctlClient.ExecuteCommandWithOutput("VDiff", "--", "--tablet_types=primary", "--source_cell="+cells, "--format", "json", ksWorkflow)
+		output, err := vc.VtctlClient.ExecuteCommandWithOutput("VDiff", "--", "--v1", "--tablet_types=primary", "--source_cell="+cells, "--format", "json", ksWorkflow)
 		log.Infof("vdiff1 err: %+v, output: %+v", err, output)
 		require.Nil(t, err)
 		require.NotNil(t, output)
@@ -110,12 +110,20 @@ func waitForVDiff2ToComplete(t *testing.T, ksWorkflow, cells, uuid string, compl
 				// The timestamp format allows us to compare them lexicographically.
 				// We don't test that the ETA always increases as it can decrease based on how
 				// quickly we're doing work.
-				if info.Progress.ETA != "" {
-					// If we're operating at the second boundary then the ETA can be up
-					// to 1 second in the past due to using second based precision.
-					loc, _ := time.LoadLocation("UTC")
-					require.GreaterOrEqual(t, info.Progress.ETA, time.Now().Add(-time.Second).In(loc).Format(vdiff2.TimestampFormat))
-				}
+
+				// Commenting out this check for now as it is quite flaky in Github CI: we sometimes get a difference of
+				// more than 1s between the ETA and the current time, empirically seen 2s when it has failed,
+				// but presumably it can be higher. Keeping the code here for now in case we want to re-enable it.
+
+				/*
+					if info.Progress.ETA != "" {
+						// If we're operating at the second boundary then the ETA can be up
+						// to 1 second in the past due to using second based precision.
+						loc, _ := time.LoadLocation("UTC")
+						require.GreaterOrEqual(t, info.Progress.ETA, time.Now().Add(-time.Second).In(loc).Format(vdiff2.TimestampFormat))
+					}
+				*/
+
 				if !first {
 					require.GreaterOrEqual(t, info.Progress.Percentage, previousProgress.Percentage)
 				}
@@ -165,7 +173,11 @@ func doVdiff2(t *testing.T, keyspace, workflow, cells string, want *expectedVDif
 
 func performVDiff2Action(t *testing.T, ksWorkflow, cells, action, actionArg string, expectError bool, extraFlags ...string) (uuid string, output string) {
 	var err error
-	args := []string{"VDiff", "--", "--v2", "--tablet_types=primary", "--source_cell=" + cells, "--format=json"}
+	// This will always result in us using a PRIMARY tablet, which is all
+	// we start in many e2e tests, but it avoids the tablet picker logic
+	// where when you ONLY specify the PRIMARY type it then picks the
+	// shard's primary and ignores any cell settings.
+	args := []string{"VDiff", "--", "--tablet_types=in_order:primary,replica", "--source_cell=" + cells, "--format=json"}
 	if len(extraFlags) > 0 {
 		args = append(args, extraFlags...)
 	}

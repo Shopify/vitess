@@ -58,6 +58,8 @@ import (
 	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/logutil"
 	"vitess.io/vitess/go/vt/mysqlctl"
+	querypb "vitess.io/vitess/go/vt/proto/query"
+	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/servenv"
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/topo/topoproto"
@@ -67,9 +69,6 @@ import (
 	"vitess.io/vitess/go/vt/vttablet/tabletmanager/vdiff"
 	"vitess.io/vitess/go/vt/vttablet/tabletmanager/vreplication"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver"
-
-	querypb "vitess.io/vitess/go/vt/proto/query"
-	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 )
 
 // Query rules from denylist
@@ -99,6 +98,7 @@ func registerInitFlags(fs *pflag.FlagSet) {
 	fs.Var(&initTags, "init_tags", "(init parameter) comma separated list of key:value pairs used to tag the tablet")
 
 	fs.BoolVar(&initPopulateMetadata, "init_populate_metadata", initPopulateMetadata, "(init parameter) populate metadata tables even if restore_from_backup is disabled. If restore_from_backup is enabled, metadata tables are always populated regardless of this flag.")
+	fs.MarkDeprecated("init_populate_metadata", "this flag is no longer being used and will be removed in future versions")
 	fs.DurationVar(&initTimeout, "init_timeout", initTimeout, "(init parameter) timeout to use for the init phase.")
 }
 
@@ -151,16 +151,8 @@ type TabletManager struct {
 	VREngine            *vreplication.Engine
 	VDiffEngine         *vdiff.Engine
 
-	// MetadataManager manages the local metadata tables for a tablet. It
-	// exists, and is exported, to support swapping a nil pointer in test code,
-	// in which case metadata creation/population is skipped.
-	MetadataManager *mysqlctl.MetadataManager
-
 	// tmState manages the TabletManager state.
 	tmState *tmState
-
-	// replManager manages replication.
-	replManager *replManager
 
 	// tabletAlias is saved away from tablet for read-only access
 	tabletAlias *topodatapb.TabletAlias
@@ -174,11 +166,6 @@ type TabletManager struct {
 	// like in the case of a restore. This semaphore must be obtained
 	// first before other mutexes.
 	actionSema *sync2.Semaphore
-
-	// orc is an optional client for Orchestrator HTTP API calls.
-	// If this is nil, those calls will be skipped.
-	// It's only set once in NewTabletManager() and never modified after that.
-	orc *orcClient
 
 	// mutex protects all the following fields (that start with '_'),
 	// only hold the mutex to update the fields, nothing else.
@@ -222,9 +209,9 @@ func BuildTabletFromInput(alias *topodatapb.TabletAlias, port, grpcPort int32, d
 		if err != nil {
 			return nil, err
 		}
-		log.Infof("Using detected machine hostname: %v, to change this, fix your machine network configuration or override it with --tablet_hostname.", hostname)
+		log.Infof("Using detected machine hostname: %v, to change this, fix your machine network configuration or override it with --tablet_hostname. Tablet %s", hostname, alias.String())
 	} else {
-		log.Infof("Using hostname: %v from --tablet_hostname flag.", hostname)
+		log.Infof("Using hostname: %v from --tablet_hostname flag. Tablet %s", hostname, alias.String())
 	}
 
 	if initKeyspace == "" || initShard == "" {
@@ -307,7 +294,7 @@ func getBuildTags(buildTags map[string]string, skipTagsCSV string) (map[string]s
 		}
 	}
 
-	skippedTags := sets.NewString()
+	skippedTags := sets.New[string]()
 	for tag := range buildTags {
 		for _, skipFn := range skippers {
 			if skipFn(tag) {
@@ -349,8 +336,11 @@ func mergeTags(a, b map[string]string) map[string]string {
 
 // Start starts the TabletManager.
 func (tm *TabletManager) Start(tablet *topodatapb.Tablet, healthCheckInterval time.Duration) error {
+	defer func() {
+		log.Infof("TabletManager Start took ~%d ms", time.Since(servenv.GetInitStartTime()).Milliseconds())
+	}()
+	log.Infof("TabletManager Start")
 	tm.DBConfigs.DBName = topoproto.TabletDbName(tablet)
-	tm.replManager = newReplManager(tm.BatchCtx, tm, healthCheckInterval)
 	tm.tabletAlias = tablet.Alias
 	tm.tmState = newTMState(tm, tablet)
 	tm.actionSema = sync2.NewSemaphore(1, 0)
@@ -403,14 +393,6 @@ func (tm *TabletManager) Start(tablet *topodatapb.Tablet, healthCheckInterval ti
 	// in any specific order.
 	tm.startShardSync()
 	tm.exportStats()
-	orc, err := newOrcClient()
-	if err != nil {
-		return err
-	}
-	if orc != nil {
-		tm.orc = orc
-		go tm.orc.DiscoverLoop(tm)
-	}
 	servenv.OnRun(tm.registerTabletManager)
 
 	restoring, err := tm.handleRestore(tm.BatchCtx)
@@ -422,7 +404,6 @@ func (tm *TabletManager) Start(tablet *topodatapb.Tablet, healthCheckInterval ti
 		// of updating the tablet state and initializing replication.
 		return nil
 	}
-
 	// We should be re-read the tablet from tabletManager and use the type specified there.
 	// We shouldn't use the base tablet type directly, since the type could have changed to PRIMARY
 	// earlier in tm.checkPrimaryShip code.
@@ -743,7 +724,6 @@ func (tm *TabletManager) initTablet(ctx context.Context) error {
 }
 
 func (tm *TabletManager) handleRestore(ctx context.Context) (bool, error) {
-	tablet := tm.Tablet()
 	// Sanity check for inconsistent flags
 	if tm.Cnf == nil && restoreFromBackup {
 		return false, fmt.Errorf("you cannot enable --restore_from_backup without a my.cnf file")
@@ -776,23 +756,6 @@ func (tm *TabletManager) handleRestore(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	// optionally populate metadata records
-	if initPopulateMetadata {
-		localMetadata := tm.getLocalMetadataValues(tablet.Type)
-		if tm.Cnf != nil { // we are managing mysqld
-			// we'll use batchCtx here because we are still initializing and can't proceed unless this succeeds
-			if err := tm.MysqlDaemon.Wait(ctx, tm.Cnf); err != nil {
-				return false, err
-			}
-		}
-
-		if tm.MetadataManager != nil {
-			err := tm.MetadataManager.PopulateMetadataTables(tm.MysqlDaemon, localMetadata, topoproto.TabletDbName(tablet))
-			if err != nil {
-				return false, vterrors.Wrap(err, "failed to --init_populate_metadata")
-			}
-		}
-	}
 	return false, nil
 }
 
@@ -923,7 +886,7 @@ func (tm *TabletManager) initializeReplication(ctx context.Context, tabletType t
 
 	// Set primary and start replication.
 	if currentPrimary.Tablet.MysqlHostname == "" {
-		log.Warningf("primary tablet in the shard record doesn't have mysql hostname specified. probably because that tablet shutdown.")
+		log.Warningf("primary tablet in the shard record does not have mysql hostname specified, possibly because that tablet has been shut down.")
 		return nil, nil
 	}
 	if err := tm.MysqlDaemon.SetReplicationSource(ctx, currentPrimary.Tablet.MysqlHostname, int(currentPrimary.Tablet.MysqlPort), true /* stopReplicationBefore */, true /* startReplicationAfter */); err != nil {

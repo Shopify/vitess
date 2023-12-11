@@ -19,6 +19,7 @@ package schema
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -34,7 +35,71 @@ func TestIsDirect(t *testing.T) {
 	assert.False(t, DDLStrategy("online").IsDirect())
 	assert.False(t, DDLStrategy("gh-ost").IsDirect())
 	assert.False(t, DDLStrategy("pt-osc").IsDirect())
+	assert.False(t, DDLStrategy("mysql").IsDirect())
 	assert.True(t, DDLStrategy("something").IsDirect())
+}
+
+func TestIsExpireArtifactsFlag(t *testing.T) {
+	tt := []struct {
+		s      string
+		expect bool
+		val    string
+		d      time.Duration
+	}{
+		{
+			s: "something",
+		},
+		{
+			s: "-retain-artifacts",
+		},
+		{
+			s: "--retain-artifacts",
+		},
+		{
+			s:      "--retain-artifacts=",
+			expect: true,
+		},
+		{
+			s:      "--retain-artifacts=0",
+			expect: true,
+			val:    "0",
+			d:      0,
+		},
+		{
+			s:      "-retain-artifacts=0",
+			expect: true,
+			val:    "0",
+			d:      0,
+		},
+		{
+			s:      "--retain-artifacts=1m",
+			expect: true,
+			val:    "1m",
+			d:      time.Minute,
+		},
+		{
+			s:      `--retain-artifacts="1m"`,
+			expect: true,
+			val:    `"1m"`,
+			d:      time.Minute,
+		},
+	}
+	for _, ts := range tt {
+		t.Run(ts.s, func(t *testing.T) {
+			setting, err := ParseDDLStrategy("online " + ts.s)
+			assert.NoError(t, err)
+
+			val, isRetainArtifacts := isRetainArtifactsFlag(ts.s)
+			assert.Equal(t, ts.expect, isRetainArtifacts)
+			assert.Equal(t, ts.val, val)
+
+			if ts.expect {
+				d, err := setting.RetainArtifactsDuration()
+				assert.NoError(t, err)
+				assert.Equal(t, ts.d, d)
+			}
+		})
+	}
 }
 
 func TestParseDDLStrategy(t *testing.T) {
@@ -46,9 +111,12 @@ func TestParseDDLStrategy(t *testing.T) {
 		isSingleton          bool
 		isPostponeLaunch     bool
 		isPostponeCompletion bool
+		isInOrderCompletion  bool
 		isAllowConcurrent    bool
 		fastOverRevertible   bool
 		fastRangeRotation    bool
+		allowForeignKeys     bool
+		expireArtifacts      time.Duration
 		runtimeOptions       string
 		err                  error
 	}{
@@ -71,6 +139,10 @@ func TestParseDDLStrategy(t *testing.T) {
 		{
 			strategyVariable: "pt-osc",
 			strategy:         DDLStrategyPTOSC,
+		},
+		{
+			strategyVariable: "mysql",
+			strategy:         DDLStrategyMySQL,
 		},
 		{
 			strategy: DDLStrategyDirect,
@@ -118,6 +190,13 @@ func TestParseDDLStrategy(t *testing.T) {
 			isPostponeCompletion: true,
 		},
 		{
+			strategyVariable:    "online --in-order-completion",
+			strategy:            DDLStrategyOnline,
+			options:             "--in-order-completion",
+			runtimeOptions:      "",
+			isInOrderCompletion: true,
+		},
+		{
 			strategyVariable:  "online -allow-concurrent",
 			strategy:          DDLStrategyOnline,
 			options:           "-allow-concurrent",
@@ -132,9 +211,9 @@ func TestParseDDLStrategy(t *testing.T) {
 			isAllowConcurrent: true,
 		},
 		{
-			strategyVariable:   "vitess --fast-over-revertible",
+			strategyVariable:   "vitess --prefer-instant-ddl",
 			strategy:           DDLStrategyVitess,
-			options:            "--fast-over-revertible",
+			options:            "--prefer-instant-ddl",
 			runtimeOptions:     "",
 			fastOverRevertible: true,
 		},
@@ -145,25 +224,46 @@ func TestParseDDLStrategy(t *testing.T) {
 			runtimeOptions:    "",
 			fastRangeRotation: true,
 		},
+		{
+			strategyVariable: "vitess --unsafe-allow-foreign-keys",
+			strategy:         DDLStrategyVitess,
+			options:          "--unsafe-allow-foreign-keys",
+			runtimeOptions:   "",
+			allowForeignKeys: true,
+		},
+		{
+			strategyVariable: "vitess --retain-artifacts=4m",
+			strategy:         DDLStrategyVitess,
+			options:          "--retain-artifacts=4m",
+			runtimeOptions:   "",
+			expireArtifacts:  4 * time.Minute,
+		},
 	}
 	for _, ts := range tt {
-		setting, err := ParseDDLStrategy(ts.strategyVariable)
-		assert.NoError(t, err)
-		assert.Equal(t, ts.strategy, setting.Strategy)
-		assert.Equal(t, ts.options, setting.Options)
-		assert.Equal(t, ts.isDeclarative, setting.IsDeclarative())
-		assert.Equal(t, ts.isSingleton, setting.IsSingleton())
-		assert.Equal(t, ts.isPostponeCompletion, setting.IsPostponeCompletion())
-		assert.Equal(t, ts.isPostponeLaunch, setting.IsPostponeLaunch())
-		assert.Equal(t, ts.isAllowConcurrent, setting.IsAllowConcurrent())
-		assert.Equal(t, ts.fastOverRevertible, setting.IsFastOverRevertibleFlag())
-		assert.Equal(t, ts.fastRangeRotation, setting.IsFastRangeRotationFlag())
+		t.Run(ts.strategyVariable, func(t *testing.T) {
+			setting, err := ParseDDLStrategy(ts.strategyVariable)
+			assert.NoError(t, err)
+			assert.Equal(t, ts.strategy, setting.Strategy)
+			assert.Equal(t, ts.options, setting.Options)
+			assert.Equal(t, ts.isDeclarative, setting.IsDeclarative())
+			assert.Equal(t, ts.isSingleton, setting.IsSingleton())
+			assert.Equal(t, ts.isPostponeCompletion, setting.IsPostponeCompletion())
+			assert.Equal(t, ts.isPostponeLaunch, setting.IsPostponeLaunch())
+			assert.Equal(t, ts.isAllowConcurrent, setting.IsAllowConcurrent())
+			assert.Equal(t, ts.fastOverRevertible, setting.IsPreferInstantDDL())
+			assert.Equal(t, ts.fastRangeRotation, setting.IsFastRangeRotationFlag())
+			assert.Equal(t, ts.allowForeignKeys, setting.IsAllowForeignKeysFlag())
 
-		runtimeOptions := strings.Join(setting.RuntimeOptions(), " ")
-		assert.Equal(t, ts.runtimeOptions, runtimeOptions)
+			runtimeOptions := strings.Join(setting.RuntimeOptions(), " ")
+			assert.Equal(t, ts.runtimeOptions, runtimeOptions)
+		})
 	}
 	{
 		_, err := ParseDDLStrategy("other")
+		assert.Error(t, err)
+	}
+	{
+		_, err := ParseDDLStrategy("online --retain-artifacts=3")
 		assert.Error(t, err)
 	}
 }

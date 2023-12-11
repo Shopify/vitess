@@ -19,6 +19,7 @@ package framework
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -40,6 +41,7 @@ type QueryClient struct {
 	target              *querypb.Target
 	server              *tabletserver.TabletServer
 	transactionID       int64
+	reservedIDMu        sync.Mutex
 	reservedID          int64
 	sessionStateChanges string
 }
@@ -114,6 +116,8 @@ func (client *QueryClient) Commit() error {
 func (client *QueryClient) Rollback() error {
 	defer func() { client.transactionID = 0 }()
 	rID, err := client.server.Rollback(client.ctx, client.target, client.transactionID)
+	client.reservedIDMu.Lock()
+	defer client.reservedIDMu.Unlock()
 	client.reservedID = rID
 	if err != nil {
 		return err
@@ -293,6 +297,8 @@ func (client *QueryClient) MessageAck(name string, ids []string) (int64, error) 
 
 // ReserveExecute performs a ReserveExecute.
 func (client *QueryClient) ReserveExecute(query string, preQueries []string, bindvars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
+	client.reservedIDMu.Lock()
+	defer client.reservedIDMu.Unlock()
 	if client.reservedID != 0 {
 		return nil, errors.New("already reserved a connection")
 	}
@@ -403,4 +409,20 @@ func (client *QueryClient) SetReservedID(id int64) {
 // StreamHealth receives the health response
 func (client *QueryClient) StreamHealth(sendFunc func(*querypb.StreamHealthResponse) error) error {
 	return client.server.StreamHealth(client.ctx, sendFunc)
+}
+
+func (client *QueryClient) UpdateContext(ctx context.Context) {
+	client.ctx = ctx
+}
+
+func (client *QueryClient) GetSchema(tableType querypb.SchemaTableType, tableNames ...string) (map[string]string, error) {
+	schemaDef := map[string]string{}
+	err := client.server.GetSchema(client.ctx, client.target, tableType, tableNames, func(schemaRes *querypb.GetSchemaResponse) error {
+		schemaDef = schemaRes.TableDefinition
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return schemaDef, nil
 }

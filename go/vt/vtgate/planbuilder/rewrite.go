@@ -17,7 +17,6 @@ limitations under the License.
 package planbuilder
 
 import (
-	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
@@ -76,7 +75,7 @@ func (r *rewriter) rewriteDown(cursor *sqlparser.Cursor) bool {
 		}
 		tableName := node.Expr.(sqlparser.TableName)
 		// if the table name matches what the original is, then we do not need to rewrite
-		if sqlparser.EqualsIdentifierCS(vindexTable.Name, tableName.Name) {
+		if sqlparser.Equals.IdentifierCS(vindexTable.Name, tableName.Name) {
 			break
 		}
 		// if there is no as clause, then move the routed table to the as clause.
@@ -89,6 +88,8 @@ func (r *rewriter) rewriteDown(cursor *sqlparser.Cursor) bool {
 		// replace the table name with the original table
 		tableName.Name = vindexTable.Name
 		node.Expr = tableName
+	case *sqlparser.ExtractedSubquery:
+		return false
 	case *sqlparser.Subquery:
 		err := rewriteSubquery(cursor, r, node)
 		if err != nil {
@@ -114,7 +115,7 @@ func rewriteInSubquery(cursor *sqlparser.Cursor, r *rewriter, node *sqlparser.Co
 
 	semTableSQ, found := r.semTable.SubqueryRef[subq]
 	if !found {
-		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "BUG: came across subquery that was not in the subq map")
+		return vterrors.VT13001("got subquery that was not in the subq map")
 	}
 
 	r.inSubquery++
@@ -128,7 +129,7 @@ func rewriteInSubquery(cursor *sqlparser.Cursor, r *rewriter, node *sqlparser.Co
 func rewriteSubquery(cursor *sqlparser.Cursor, r *rewriter, node *sqlparser.Subquery) error {
 	semTableSQ, found := r.semTable.SubqueryRef[node]
 	if !found {
-		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "BUG: came across subquery that was not in the subq map")
+		return vterrors.VT13001("got subquery that was not in the subq map")
 	}
 	if semTableSQ.GetArgName() != "" || engine.PulloutOpcode(semTableSQ.OpCode) != engine.PulloutValue {
 		return nil
@@ -143,7 +144,7 @@ func rewriteSubquery(cursor *sqlparser.Cursor, r *rewriter, node *sqlparser.Subq
 func (r *rewriter) rewriteExistsSubquery(cursor *sqlparser.Cursor, node *sqlparser.ExistsExpr) error {
 	semTableSQ, found := r.semTable.SubqueryRef[node.Subquery]
 	if !found {
-		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "BUG: came across subquery that was not in the subq map")
+		return vterrors.VT13001("got subquery that was not in the subq map")
 	}
 
 	r.inSubquery++

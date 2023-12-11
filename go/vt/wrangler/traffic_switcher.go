@@ -324,14 +324,14 @@ func (wr *Wrangler) SwitchReads(ctx context.Context, targetKeyspace, workflowNam
 		wr.Logger().Errorf(errorMsg)
 		return nil, fmt.Errorf(errorMsg)
 	}
-	log.Infof("SwitchReads: %s.%s tt %+v, cells %+v, workflow state: %+v", targetKeyspace, workflowName, servedTypes, cells, ws)
+	log.Infof("Switching reads: %s.%s tt %+v, cells %+v, workflow state: %+v", targetKeyspace, workflowName, servedTypes, cells, ws)
 	var switchReplicas, switchRdonly bool
 	for _, servedType := range servedTypes {
 		if servedType != topodatapb.TabletType_REPLICA && servedType != topodatapb.TabletType_RDONLY {
 			return nil, fmt.Errorf("tablet type must be REPLICA or RDONLY: %v", servedType)
 		}
 		if direction == workflow.DirectionBackward && servedType == topodatapb.TabletType_REPLICA && len(ws.ReplicaCellsSwitched) == 0 {
-			return nil, fmt.Errorf("requesting reversal of SwitchReads for REPLICAs but REPLICA reads have not been switched")
+			return nil, fmt.Errorf("requesting reversal of read traffic for REPLICAs but REPLICA reads have not been switched")
 		}
 		if direction == workflow.DirectionBackward && servedType == topodatapb.TabletType_RDONLY && len(ws.RdonlyCellsSwitched) == 0 {
 			return nil, fmt.Errorf("requesting reversal of SwitchReads for RDONLYs but RDONLY reads have not been switched")
@@ -1366,6 +1366,7 @@ func (ts *trafficSwitcher) deleteReverseVReplication(ctx context.Context) error 
 			return err
 		}
 		ts.wr.deleteWorkflowVDiffData(ctx, source.GetPrimary().Tablet, ts.reverseWorkflow)
+		ts.wr.optimizeCopyStateTable(source.GetPrimary().Tablet)
 		return nil
 	})
 }
@@ -1658,7 +1659,11 @@ func (ts *trafficSwitcher) removeSourceTables(ctx context.Context, removalType w
 				renameName := getRenameFileName(tableName)
 				ts.Logger().Infof("%s: Renaming table %s.%s to %s.%s\n",
 					source.GetPrimary().String(), source.GetPrimary().DbName(), tableName, source.GetPrimary().DbName(), renameName)
-				query = fmt.Sprintf("rename table %s.%s TO %s.%s", source.GetPrimary().DbName(), tableName, source.GetPrimary().DbName(), renameName)
+				query = fmt.Sprintf("rename table %s.%s TO %s.%s",
+					sqlescape.EscapeID(sqlescape.UnescapeID(source.GetPrimary().DbName())),
+					sqlescape.EscapeID(sqlescape.UnescapeID(tableName)),
+					sqlescape.EscapeID(sqlescape.UnescapeID(source.GetPrimary().DbName())),
+					sqlescape.EscapeID(sqlescape.UnescapeID(renameName)))
 			}
 			_, err := ts.wr.ExecuteFetchAsDba(ctx, source.GetPrimary().Alias, query, 1, false, true)
 			if err != nil {
@@ -1681,6 +1686,14 @@ func (ts *trafficSwitcher) dropParticipatingTablesFromKeyspace(ctx context.Conte
 	vschema, err := ts.TopoServer().GetVSchema(ctx, keyspace)
 	if err != nil {
 		return err
+	}
+	// VReplication does NOT create the vschema entries in SHARDED
+	// TARGET keyspaces -- as we cannot know the proper vindex
+	// definitions to use -- and we should not delete them either
+	// (on workflow Cancel) as the user must create them separately
+	// and they contain information about the vindex definitions, etc.
+	if vschema.Sharded && keyspace == ts.TargetKeyspaceName() {
+		return nil
 	}
 	for _, tableName := range ts.Tables() {
 		delete(vschema.Tables, tableName)
@@ -1725,6 +1738,7 @@ func (ts *trafficSwitcher) dropTargetVReplicationStreams(ctx context.Context) er
 			return err
 		}
 		ts.wr.deleteWorkflowVDiffData(ctx, target.GetPrimary().Tablet, ts.WorkflowName())
+		ts.wr.optimizeCopyStateTable(target.GetPrimary().Tablet)
 		return nil
 	})
 }
@@ -1737,6 +1751,7 @@ func (ts *trafficSwitcher) dropSourceReverseVReplicationStreams(ctx context.Cont
 			return err
 		}
 		ts.wr.deleteWorkflowVDiffData(ctx, source.GetPrimary().Tablet, workflow.ReverseWorkflowName(ts.WorkflowName()))
+		ts.wr.optimizeCopyStateTable(source.GetPrimary().Tablet)
 		return nil
 	})
 }
@@ -1767,7 +1782,6 @@ func (ts *trafficSwitcher) removeTargetTables(ctx context.Context) error {
 	}
 
 	return ts.dropParticipatingTablesFromKeyspace(ctx, ts.TargetKeyspaceName())
-
 }
 
 func (ts *trafficSwitcher) dropTargetShards(ctx context.Context) error {

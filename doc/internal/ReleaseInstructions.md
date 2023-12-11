@@ -117,7 +117,7 @@ Create the `settings.xml` in the `$HOME/.m2/` directory as described in their [i
 
 -------
 
-## Release Cutover 
+## Release Cutover
 
 In this section we describe our current release process. We begin with a list of [**pre-requisite for the release team**](#pre-requisites) and with a short [**overview**](#overview).
 The release process is divided into three parts: [**Pre-Release**](#pre-release), [**Release**](#release), [**Post-Release**](#post-release), which are detailed after the overview.
@@ -158,7 +158,7 @@ That includes:
   > - All the Pull Requests that need to be in the release must be reviewed and merged before the code freeze.
   > - The code freeze usually happens a few days before the release.
 - **Making sure the people doing the release have access to all the tools and infrastructure needed to do the release.**
-  > - This includes write access to the Vitess repository and to the Maven repository. 
+  > - This includes write access to the Vitess repository and to the Maven repository.
 - **Preparing and cleaning the release notes summary.**
   > - One or more Pull Requests have to be submitted in advance to create and update the release summary.
   > - The summary files are located in: `./changelog/*.0/*.*.*/summary.md`.
@@ -171,7 +171,6 @@ That includes:
   > - As soon as we go into code freeze, if we are doing an RC, create the release branch.
   > - If we are doing a GA release, do not merge any new Pull Requests.
   > - The guide on how to do a code freeze is available in the [How To Code Freeze](#how-to-code-freeze) section.
-  > - It is not advised to merge a PR during code freeze, but if it is deemed necessary by the release lead, then follow the steps in [How To Merge During Code Freeze](#how-to-merge-during-code-freeze) section.
 - **Create the Vitess release.**
   > - A guide on how to create a Vitess release is available in the [How to prepare the release of Vitess](#how-to-prepare-the-release-of-vitess) section.
   > - This step will create a Release Pull Request, it must be reviewed and merged before the release day. The release commit will be used to tag the release.
@@ -188,12 +187,8 @@ That includes:
 
 On the release day, there are several things to do:
 
-- **Merge the Release Pull Request.**
-  > - During the code freeze, we created a Release Pull Request. It must be merged.
 - **Tag the Vitess release.**
   > - A guide on how to tag a version is available in the [How To Release Vitess](#how-to-release-vitess) section.
-- **Update the release notes on `main`.**
-  > - During the code freeze, we created a Pull Request against `main` to update the release notes. It must be merged.
 - **Create the corresponding Vitess operator release.**
   > - Applies only to versions greater or equal to `v14.0.0`.
   > - If we are doing an RC release, then we will need to create the Vitess Operator RC too. If we are doing a GA release, we're also doing a GA release in the Operator.
@@ -215,8 +210,10 @@ On the release day, there are several things to do:
   > - After a while, those elements will finish their execution and their status will be green.
   > - This step is even more important for GA releases as we often include a link to _arewefastyet_ in the blog post.
   > - The benchmarks need to complete before announcing the blog posts or before they get cross-posted.
+- **Update the release notes on `main`.**
+  > - One Pull Request against `main` must be created, it will contain the new release notes.
 - **Go back to dev mode on the release branch.**
-  > - The version constants across the codebase must be updated to `SNAPSHOT`. 
+  > - The version constants across the codebase must be updated to `SNAPSHOT`.
 - **Build k8s Docker images and publish them**
   > - The docker image for `base`, `lite`, etc are built automatically by DockerHub. The k8s images however are dependent on these images and are required to be built manually.
   > - These images should be built after the `base` image has been built and available on DockerHub.
@@ -263,20 +260,22 @@ We need to verify that _arewefastyet_ has finished the benchmark too.
     2. Run the following command to generate the release notes:
         1. Release Candidate:
             ```shell
-            make VERSION="v15.0.0-rc1" FROM="v14.0.3" TO="HEAD" SUMMARY="./changelog/15.0/15.0.0/summary.md" release-notes  
+            go run ./go/tools/release-notes --from "v14.0.3" --to "HEAD" --version "v15.0.0-rc1" --summary "./changelog/15.0/15.0.0/summary.md" [--threads=[0-9.]]
             ```
         2. General Availability:
             ```shell
-            make VERSION="v15.0.0-rc1" FROM="v14.0.3" TO="HEAD" SUMMARY="./changelog/15.0/15.0.0/summary.md" release-notes  
+            go run ./go/tools/release-notes --from "v14.0.3" --to "HEAD" --version "v15.0.0" --summary "./changelog/15.0/15.0.0/summary.md" [--threads=[0-9.]]
             ```
+
+        > Important note: The release note generation fetches a lot of data from the GitHub API. You might reach the API request limit.
+        In which case you should use the `--threads=` flag and set an integer value lower than 10 (the default).
+
        This command will generate the release notes by looking at all the commits between the tag `v14.0.3` and the reference `HEAD`.
        It will also use the file located in `./changelog/15.0/15.0.0/summary.md` to prefix the release notes with a text that the maintainers wrote before the release.
        Please verify the generated release notes to make sure it is well-formatted and all the bookmarks are generated properly.
 
 
 3. Follow the instruction prompted by the `create_release` Makefile command's output in order to push the newly created branch and create the Release Pull Request on GitHub.
-
-4. If we are doing an RC release it means we created a new branch from `main`. We need to update `main` with the next SNAPSHOT version. If `main` was on `15.0.0-SNAPSHOT`, we need to update it to `16.0.0-SNAPSHOT`. A simple find and replace in the IDE is sufficient, there only a handful of files that must be changed: `version.go` and several java files.
 
 ### How To Release Vitess
 This section is divided into two parts:
@@ -287,16 +286,16 @@ This section is divided into two parts:
 
 > This step implies that you have created a [Release Pull Request](#how-to-prepare-the-release-of-vitess) beforehand and that it has been reviewed.
 > The merge commit of this Release Pull Request will be used to tag the release.
-> 
+>
 > In this example our current version is `v14.0.3` and we release the version `v15.0.0`.
 > Alongside Vitess' release, we also release a new version of the operator.
 > Since we are releasing a release candidate here, the new version of the operator will also be a release candidate.
 > In this example, the new operator version is `2.8.0`.
-> 
+>
 > It is important to note that before the RC, there is a code freeze during which we create the release branch.
 >
 > The release branch in this example is `release-15.0`.
-> 
+>
 > The example also assumes that `origin` is the `vitessio/vitess` remote.
 
 1. Fetch `github.com/vitessio/vitess`'s remote.
@@ -318,7 +317,7 @@ This section is divided into two parts:
    make BASE_BRANCH="release-15.0" BASE_REMOTE="origin" RELEASE_VERSION="15.0.0-rc1" DEV_VERSION="15.0.0-SNAPSHOT" back_to_dev_mode
    ```
    > You will then need to follow the instructions given by the output of the back_to_dev_mode Makefile command. You will need to push the newly created branch and open a Pull Request.
-   
+
 6. Release the tag on GitHub UI as explained in the following section.
 
 #### Creating Release or Release Candidate on the GitHub UI
@@ -388,7 +387,7 @@ Remember, you should also disable the Launchable integration from the newly crea
 ### How To Merge During Code Freeze
 
 > **Warning:** It is not advised to merge a PR during code-freeze. If it is deemed absolutely necessary, then the following steps can be followed.
- 
+
 The PR that needs to be merged will be failing on the `Code Freeze` CI. To merge this PR, we'll have to mark this CI action as not required.
 You will need administrator privileges on the vitess repository to be able to make this change.
 
@@ -399,7 +398,7 @@ You will need administrator privileges on the vitess repository to be able to ma
 5. Within this list find `Code Freeze` and click on the cross next to it to remove it from this list.
 6. Save your changes on the bottom of the page.
 7. Refresh the page of the PR, and you should be able to merge it.
-8. After merging the PR, you need to do 2 more things - 
+8. After merging the PR, you need to do 2 more things -
    1. Add `Code Freeze` back as a required check.
    2. Check if the release PR has any merge conflicts. If it does, fix them and push.
 
@@ -407,7 +406,7 @@ You will need administrator privileges on the vitess repository to be able to ma
 
 > **Warning:** This section's steps need to be executed only when releasing a new major version of Vitess,
 > or if the Java packages changed from one minor/patch version to another.
-> 
+>
 > For this example, we assume we juste released `v12.0.0`.
 
 1. Checkout to the release commit.
@@ -415,7 +414,7 @@ You will need administrator privileges on the vitess repository to be able to ma
     git checkout v12.0.0
     ```
 
-2. Run `gpg-agent` to avoid that Maven will constantly prompt you for the password of your private key. Note that this can print error messages that can be ignored on Mac.
+2. Run `gpg-agent` to avoid that Maven will constantly prompt you for the password of your private key.
 
     ```bash
     eval $(gpg-agent --daemon --no-grab --write-env-file $HOME/.gpg-agent-info)
@@ -425,7 +424,7 @@ You will need administrator privileges on the vitess repository to be able to ma
 
 3. Export following to avoid any version conflicts
     ```bash
-    export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED 
+    export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED
     --add-opens=java.desktop/java.awt.font=ALL-UNNAMED"
     ```
 
@@ -438,5 +437,4 @@ You will need administrator privileges on the vitess repository to be able to ma
     mvn clean deploy -P release -DskipTests
     cd ..
     ```
-
 5. It will take some time for artifacts to appear on [maven directory](https://mvnrepository.com/artifact/io.vitess/vitess-client)

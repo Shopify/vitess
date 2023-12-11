@@ -18,9 +18,7 @@ package planbuilder
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -29,189 +27,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nsf/jsondiff"
 	"github.com/stretchr/testify/require"
 
-	"vitess.io/vitess/go/vt/servenv"
-
-	vtgatepb "vitess.io/vitess/go/vt/proto/vtgate"
-
-	"vitess.io/vitess/go/test/utils"
-	vschemapb "vitess.io/vitess/go/vt/proto/vschema"
-	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
-
 	"vitess.io/vitess/go/mysql/collations"
-	"vitess.io/vitess/go/vt/vtgate/semantics"
-
-	"github.com/google/go-cmp/cmp"
-
-	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
-	"vitess.io/vitess/go/vt/vterrors"
-
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/test/utils"
 	"vitess.io/vitess/go/vt/key"
+	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
+	vschemapb "vitess.io/vitess/go/vt/proto/vschema"
+	"vitess.io/vitess/go/vt/servenv"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/topo/topoproto"
+	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
+	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
+	"vitess.io/vitess/go/vt/vtgate/semantics"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
-
-	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 )
-
-// hashIndex is a functional, unique Vindex.
-type hashIndex struct{ name string }
-
-func (v *hashIndex) String() string   { return v.name }
-func (*hashIndex) Cost() int          { return 1 }
-func (*hashIndex) IsUnique() bool     { return true }
-func (*hashIndex) NeedsVCursor() bool { return false }
-func (*hashIndex) Verify(context.Context, vindexes.VCursor, []sqltypes.Value, [][]byte) ([]bool, error) {
-	return []bool{}, nil
-}
-func (*hashIndex) Map(ctx context.Context, vcursor vindexes.VCursor, ids []sqltypes.Value) ([]key.Destination, error) {
-	return nil, nil
-}
-
-func newHashIndex(name string, _ map[string]string) (vindexes.Vindex, error) {
-	return &hashIndex{name: name}, nil
-}
-
-// lookupIndex is a unique Vindex, and satisfies Lookup.
-type lookupIndex struct{ name string }
-
-func (v *lookupIndex) String() string   { return v.name }
-func (*lookupIndex) Cost() int          { return 2 }
-func (*lookupIndex) IsUnique() bool     { return true }
-func (*lookupIndex) NeedsVCursor() bool { return false }
-func (*lookupIndex) Verify(context.Context, vindexes.VCursor, []sqltypes.Value, [][]byte) ([]bool, error) {
-	return []bool{}, nil
-}
-func (*lookupIndex) Map(ctx context.Context, vcursor vindexes.VCursor, ids []sqltypes.Value) ([]key.Destination, error) {
-	return nil, nil
-}
-func (*lookupIndex) Create(context.Context, vindexes.VCursor, [][]sqltypes.Value, [][]byte, bool) error {
-	return nil
-}
-func (*lookupIndex) Delete(context.Context, vindexes.VCursor, [][]sqltypes.Value, []byte) error {
-	return nil
-}
-func (*lookupIndex) Update(context.Context, vindexes.VCursor, []sqltypes.Value, []byte, []sqltypes.Value) error {
-	return nil
-}
-
-func newLookupIndex(name string, _ map[string]string) (vindexes.Vindex, error) {
-	return &lookupIndex{name: name}, nil
-}
-
-var _ vindexes.Lookup = (*lookupIndex)(nil)
-
-// nameLkpIndex satisfies Lookup, NonUnique.
-type nameLkpIndex struct{ name string }
-
-func (v *nameLkpIndex) String() string                     { return v.name }
-func (*nameLkpIndex) Cost() int                            { return 3 }
-func (*nameLkpIndex) IsUnique() bool                       { return false }
-func (*nameLkpIndex) NeedsVCursor() bool                   { return false }
-func (*nameLkpIndex) AllowBatch() bool                     { return true }
-func (*nameLkpIndex) AutoCommitEnabled() bool              { return false }
-func (*nameLkpIndex) GetCommitOrder() vtgatepb.CommitOrder { return vtgatepb.CommitOrder_NORMAL }
-func (*nameLkpIndex) Verify(context.Context, vindexes.VCursor, []sqltypes.Value, [][]byte) ([]bool, error) {
-	return []bool{}, nil
-}
-func (*nameLkpIndex) Map(ctx context.Context, vcursor vindexes.VCursor, ids []sqltypes.Value) ([]key.Destination, error) {
-	return nil, nil
-}
-func (*nameLkpIndex) Create(context.Context, vindexes.VCursor, [][]sqltypes.Value, [][]byte, bool) error {
-	return nil
-}
-func (*nameLkpIndex) Delete(context.Context, vindexes.VCursor, [][]sqltypes.Value, []byte) error {
-	return nil
-}
-func (*nameLkpIndex) Update(context.Context, vindexes.VCursor, []sqltypes.Value, []byte, []sqltypes.Value) error {
-	return nil
-}
-func (v *nameLkpIndex) Query() (string, []string) {
-	return "select name, keyspace_id from name_user_vdx where name in ::name", []string{"name"}
-}
-func (*nameLkpIndex) MapResult([]sqltypes.Value, []*sqltypes.Result) ([]key.Destination, error) {
-	return nil, nil
-}
-
-func newNameLkpIndex(name string, _ map[string]string) (vindexes.Vindex, error) {
-	return &nameLkpIndex{name: name}, nil
-}
-
-var _ vindexes.Vindex = (*nameLkpIndex)(nil)
-var _ vindexes.Lookup = (*nameLkpIndex)(nil)
-var _ vindexes.LookupPlanable = (*nameLkpIndex)(nil)
-
-// costlyIndex satisfies Lookup, NonUnique.
-type costlyIndex struct{ name string }
-
-func (v *costlyIndex) String() string   { return v.name }
-func (*costlyIndex) Cost() int          { return 10 }
-func (*costlyIndex) IsUnique() bool     { return false }
-func (*costlyIndex) NeedsVCursor() bool { return false }
-func (*costlyIndex) Verify(context.Context, vindexes.VCursor, []sqltypes.Value, [][]byte) ([]bool, error) {
-	return []bool{}, nil
-}
-func (*costlyIndex) Map(ctx context.Context, vcursor vindexes.VCursor, ids []sqltypes.Value) ([]key.Destination, error) {
-	return nil, nil
-}
-func (*costlyIndex) Create(context.Context, vindexes.VCursor, [][]sqltypes.Value, [][]byte, bool) error {
-	return nil
-}
-func (*costlyIndex) Delete(context.Context, vindexes.VCursor, [][]sqltypes.Value, []byte) error {
-	return nil
-}
-func (*costlyIndex) Update(context.Context, vindexes.VCursor, []sqltypes.Value, []byte, []sqltypes.Value) error {
-	return nil
-}
-
-func newCostlyIndex(name string, _ map[string]string) (vindexes.Vindex, error) {
-	return &costlyIndex{name: name}, nil
-}
-
-var _ vindexes.Vindex = (*costlyIndex)(nil)
-var _ vindexes.Lookup = (*costlyIndex)(nil)
-
-// multiColIndex satisfies multi column vindex.
-type multiColIndex struct {
-	name string
-}
-
-func newMultiColIndex(name string, _ map[string]string) (vindexes.Vindex, error) {
-	return &multiColIndex{name: name}, nil
-}
-
-var _ vindexes.MultiColumn = (*multiColIndex)(nil)
-
-func (m *multiColIndex) String() string { return m.name }
-
-func (m *multiColIndex) Cost() int { return 1 }
-
-func (m *multiColIndex) IsUnique() bool { return true }
-
-func (m *multiColIndex) NeedsVCursor() bool { return false }
-
-func (m *multiColIndex) Map(ctx context.Context, vcursor vindexes.VCursor, rowsColValues [][]sqltypes.Value) ([]key.Destination, error) {
-	return nil, nil
-}
-
-func (m *multiColIndex) Verify(ctx context.Context, vcursor vindexes.VCursor, rowsColValues [][]sqltypes.Value, ksids [][]byte) ([]bool, error) {
-	return []bool{}, nil
-}
-
-func (m *multiColIndex) PartialVindex() bool {
-	return true
-}
-
-func init() {
-	vindexes.Register("hash_test", newHashIndex)
-	vindexes.Register("lookup_test", newLookupIndex)
-	vindexes.Register("name_lkp_test", newNameLkpIndex)
-	vindexes.Register("costly", newCostlyIndex)
-	vindexes.Register("multiCol_test", newMultiColIndex)
-}
 
 func makeTestOutput(t *testing.T) string {
 	testOutputTempDir := utils.MakeTestOutput(t, "testdata", "plan_test")
@@ -254,7 +87,9 @@ func TestPlan(t *testing.T) {
 	testFile(t, "flush_cases_no_default_keyspace.json", testOutputTempDir, vschemaWrapper, false)
 	testFile(t, "show_cases_no_default_keyspace.json", testOutputTempDir, vschemaWrapper, false)
 	testFile(t, "stream_cases.json", testOutputTempDir, vschemaWrapper, false)
-	testFile(t, "systemtables_cases80.json", testOutputTempDir, vschemaWrapper, false)
+	testFile(t, "info_schema80_cases.json", testOutputTempDir, vschemaWrapper, false)
+	testFile(t, "reference_cases.json", testOutputTempDir, vschemaWrapper, false)
+	testFile(t, "vexplain_cases.json", testOutputTempDir, vschemaWrapper, false)
 }
 
 func TestSystemTables57(t *testing.T) {
@@ -263,7 +98,7 @@ func TestSystemTables57(t *testing.T) {
 	defer servenv.SetMySQLServerVersionForTest("")
 	vschemaWrapper := &vschemaWrapper{v: loadSchema(t, "vschemas/schema.json", true)}
 	testOutputTempDir := makeTestOutput(t)
-	testFile(t, "systemtables_cases57.json", testOutputTempDir, vschemaWrapper, false)
+	testFile(t, "info_schema57_cases.json", testOutputTempDir, vschemaWrapper, false)
 }
 
 func TestSysVarSetDisabled(t *testing.T) {
@@ -273,6 +108,15 @@ func TestSysVarSetDisabled(t *testing.T) {
 	}
 
 	testFile(t, "set_sysvar_disabled_cases.json", makeTestOutput(t), vschemaWrapper, false)
+}
+
+func TestViews(t *testing.T) {
+	vschemaWrapper := &vschemaWrapper{
+		v:           loadSchema(t, "vschemas/schema.json", true),
+		enableViews: true,
+	}
+
+	testFile(t, "view_cases.json", makeTestOutput(t), vschemaWrapper, false)
 }
 
 func TestOne(t *testing.T) {
@@ -378,7 +222,7 @@ func BenchmarkTPCH(b *testing.B) {
 
 func benchmarkWorkload(b *testing.B, name string) {
 	vschemaWrapper := &vschemaWrapper{
-		v:             loadSchema(b, name+"vschemas/_schema.json", true),
+		v:             loadSchema(b, "vschemas/"+name+"_schema.json", true),
 		sysVarEnabled: true,
 	}
 
@@ -510,6 +354,15 @@ func loadSchema(t testing.TB, filename string, setCollation bool) *vindexes.VSch
 			t.Fatal(ks.Error)
 		}
 
+		// adding view in user keyspace
+		if ks.Keyspace.Name == "user" {
+			if err = vschema.AddView(ks.Keyspace.Name,
+				"user_details_view",
+				"select user.id, user_extra.col from user join user_extra on user.id = user_extra.user_id"); err != nil {
+				t.Fatal(err)
+			}
+		}
+
 		// setting a default value to all the text columns in the tables of this keyspace
 		// so that we can "simulate" a real case scenario where the vschema is aware of
 		// columns' collations.
@@ -535,6 +388,7 @@ type vschemaWrapper struct {
 	dest          key.Destination
 	sysVarEnabled bool
 	version       plancontext.PlannerVersion
+	enableViews   bool
 }
 
 func (vw *vschemaWrapper) IsShardRoutingEnabled() bool {
@@ -560,7 +414,7 @@ func (vw *vschemaWrapper) GetSrvVschema() *vschemapb.SrvVSchema {
 }
 
 func (vw *vschemaWrapper) ConnCollation() collations.ID {
-	return collations.Unknown
+	return collations.CollationUtf8ID
 }
 
 func (vw *vschemaWrapper) PlannerWarning(_ string) {
@@ -572,7 +426,7 @@ func (vw *vschemaWrapper) ForeignKeyMode() string {
 
 func (vw *vschemaWrapper) AllKeyspace() ([]*vindexes.Keyspace, error) {
 	if vw.keyspace == nil {
-		return nil, errors.New("keyspace not available")
+		return nil, vterrors.VT13001("keyspace not available")
 	}
 	return []*vindexes.Keyspace{vw.keyspace}, nil
 }
@@ -580,7 +434,7 @@ func (vw *vschemaWrapper) AllKeyspace() ([]*vindexes.Keyspace, error) {
 // FindKeyspace implements the VSchema interface
 func (vw *vschemaWrapper) FindKeyspace(keyspace string) (*vindexes.Keyspace, error) {
 	if vw.keyspace == nil {
-		return nil, errors.New("keyspace not available")
+		return nil, vterrors.VT13001("keyspace not available")
 	}
 	if vw.keyspace.Name == keyspace {
 		return vw.keyspace, nil
@@ -621,11 +475,11 @@ func (vw *vschemaWrapper) TargetDestination(qualifier string) (key.Destination, 
 		keyspaceName = qualifier
 	}
 	if keyspaceName == "" {
-		return nil, nil, 0, vterrors.New(vtrpcpb.Code_INVALID_ARGUMENT, "keyspace not specified")
+		return nil, nil, 0, vterrors.VT03007()
 	}
 	keyspace := vw.v.Keyspaces[keyspaceName]
 	if keyspace == nil {
-		return nil, nil, 0, vterrors.NewErrorf(vtrpcpb.Code_NOT_FOUND, vterrors.BadDb, "Unknown database '%s' in vschema", keyspaceName)
+		return nil, nil, 0, vterrors.VT05003(keyspaceName)
 	}
 	return vw.dest, keyspace.Keyspace, vw.tabletType, nil
 
@@ -649,6 +503,14 @@ func (vw *vschemaWrapper) FindTable(tab sqlparser.TableName) (*vindexes.Table, s
 		return nil, destKeyspace, destTabletType, destTarget, err
 	}
 	return table, destKeyspace, destTabletType, destTarget, nil
+}
+
+func (vw *vschemaWrapper) FindView(tab sqlparser.TableName) sqlparser.SelectStatement {
+	destKeyspace, _, _, err := topoproto.ParseDestination(tab.Qualifier.String(), topodatapb.TabletType_PRIMARY)
+	if err != nil {
+		return nil
+	}
+	return vw.v.FindView(destKeyspace, tab.Name.String())
 }
 
 func (vw *vschemaWrapper) FindTableOrVindex(tab sqlparser.TableName) (*vindexes.Table, vindexes.Vindex, string, topodatapb.TabletType, key.Destination, error) {
@@ -719,6 +581,10 @@ func (vw *vschemaWrapper) FindRoutedShard(keyspace, shard string) (string, error
 	return "", nil
 }
 
+func (vw *vschemaWrapper) IsViewsEnabled() bool {
+	return vw.enableViews
+}
+
 type (
 	planTest struct {
 		Comment  string          `json:"comment,omitempty"`
@@ -729,19 +595,9 @@ type (
 	}
 )
 
-func compacted(in string) string {
-	if in != "" && in[0] != '{' {
-		return in
-	}
-	dst := bytes.NewBuffer(nil)
-	err := json.Compact(dst, []byte(in))
-	if err != nil {
-		panic(err)
-	}
-	return dst.String()
-}
-
 func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper, render bool) {
+	opts := jsondiff.DefaultConsoleOptions()
+
 	t.Run(filename, func(t *testing.T) {
 		var expected []planTest
 		var outFirstPlanner string
@@ -769,10 +625,9 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper, r
 				}
 				out := getPlanOrErrorOutput(err, plan)
 
-				lft := compacted(out)
-				rgt := compacted(string(tcase.V3Plan))
-				if lft != rgt {
-					t.Errorf("V3 - %s\nDiff:\n%s\n[%s] \n[%s]", filename, cmp.Diff(tcase.V3Plan, out), tcase.V3Plan, out)
+				compare, s := jsondiff.Compare(tcase.V3Plan, []byte(out), &opts)
+				if compare != jsondiff.FullMatch {
+					t.Errorf("V3 - %s\nDiff:\n%s\n[%s] \n[%s]", filename, s, tcase.V3Plan, out)
 				}
 
 				outFirstPlanner = out
@@ -794,8 +649,9 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper, r
 			//       with this last expectation, it is an error if the Gen4 planner
 			//       produces the same plan as the V3 planner does
 			t.Run(fmt.Sprintf("Gen4: %s", testName), func(t *testing.T) {
-				if compacted(out) != compacted(string(tcase.Gen4Plan)) {
-					t.Errorf("Gen4 - %s\nDiff:\n%s\n[%s] \n[%s]", filename, cmp.Diff(tcase.Gen4Plan, out), tcase.Gen4Plan, out)
+				compare, s := jsondiff.Compare(tcase.Gen4Plan, []byte(out), &opts)
+				if compare != jsondiff.FullMatch {
+					t.Errorf("Gen4 - %s\nDiff:\n%s\n[%s] \n[%s]", filename, s, tcase.Gen4Plan, out)
 				}
 
 				if outFirstPlanner == out {

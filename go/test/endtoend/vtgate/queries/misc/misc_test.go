@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
-
 	"github.com/stretchr/testify/require"
 
 	"vitess.io/vitess/go/test/endtoend/cluster"
@@ -120,6 +119,23 @@ func TestCast(t *testing.T) {
 	mcmp.AssertMatches("select cast('3.2' as unsigned)", `[[UINT64(3)]]`)
 }
 
+func TestOuterJoinWithPredicate(t *testing.T) {
+	mcmp, closer := start(t)
+	defer closer()
+
+	// This test uses a predicate on the outer side.
+	// These can't be pushed down to MySQL and have
+	// to be evaluated on the vtgate, so we are checking
+	// that evalengine handles the predicate correctly
+
+	mcmp.Exec("insert into t1(id1, id2) values (0,0), (1,10), (2,20), (3,30), (4,40)")
+
+	mcmp.AssertMatchesNoOrder("select A.id1, B.id2 from t1 as A left join t1 as B on A.id1*10 = B.id2 WHERE B.id2 BETWEEN 20 AND 30",
+		`[[INT64(2) INT64(20)] [INT64(3) INT64(30)]]`)
+	mcmp.AssertMatchesNoOrder("select A.id1, B.id2 from t1 as A left join t1 as B on A.id1*10 = B.id2 WHERE B.id2 NOT BETWEEN 20 AND 30",
+		`[[INT64(0) INT64(0)] [INT64(1) INT64(10)] [INT64(4) INT64(40)]]`)
+}
+
 // This test ensures that we support PREPARE statement with 65530 parameters.
 // It opens a MySQL connection using the go-mysql driver and execute a select query
 // it then checks the result contains the proper rows and that it's not failing.
@@ -144,7 +160,7 @@ func TestHighNumberOfParams(t *testing.T) {
 	require.NoError(t, err)
 
 	// run the query
-	r, err := db.Query(fmt.Sprintf("SELECT /*vt+ QUERY_TIMEOUT_MS=10000 */ id1 FROM t1 WHERE id1 in (%s) ORDER BY id1 ASC", strings.Join(params, ", ")), vals...)
+	r, err := db.Query(fmt.Sprintf("SELECT id1 FROM t1 WHERE id1 in (%s) ORDER BY id1 ASC", strings.Join(params, ", ")), vals...)
 	require.NoError(t, err)
 
 	// check the results we got, we should get 5 rows with each: 0, 1, 2, 3, 4
@@ -159,4 +175,21 @@ func TestHighNumberOfParams(t *testing.T) {
 		count++
 	}
 	require.Equal(t, 5, count)
+}
+
+func TestBuggyOuterJoin(t *testing.T) {
+	// We found a couple of inconsistencies around outer joins, adding these tests to stop regressions
+	mcmp, closer := start(t)
+	defer closer()
+
+	mcmp.Exec("insert into t1(id1, id2) values (1,2), (42,5), (5, 42)")
+	mcmp.Exec("select t1.id1, t2.id1 from t1 left join t1 as t2 on t2.id1 = t2.id2")
+}
+
+func TestLeftJoinUsingUnsharded(t *testing.T) {
+	mcmp, closer := start(t)
+	defer closer()
+
+	utils.Exec(t, mcmp.VtConn, "insert /*vt+ QUERY_TIMEOUT_MS=1000 */ into uks.unsharded(id1) values (1),(2),(3),(4),(5)")
+	utils.Exec(t, mcmp.VtConn, "select /*vt+ QUERY_TIMEOUT_MS=1000 */ * from uks.unsharded as A left join uks.unsharded as B using(id1)")
 }

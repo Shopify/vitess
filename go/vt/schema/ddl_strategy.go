@@ -19,12 +19,15 @@ package schema
 import (
 	"fmt"
 	"regexp"
+	"strconv"
+	"time"
 
 	"github.com/google/shlex"
 )
 
 var (
-	strategyParserRegexp = regexp.MustCompile(`^([\S]+)\s+(.*)$`)
+	strategyParserRegexp      = regexp.MustCompile(`^([\S]+)\s+(.*)$`)
+	retainArtifactsFlagRegexp = regexp.MustCompile(fmt.Sprintf(`^[-]{1,2}%s=(.*?)$`, retainArtifactsFlag))
 )
 
 const (
@@ -35,17 +38,20 @@ const (
 	allowZeroInDateFlag    = "allow-zero-in-date"
 	postponeLaunchFlag     = "postpone-launch"
 	postponeCompletionFlag = "postpone-completion"
+	inOrderCompletionFlag  = "in-order-completion"
 	allowConcurrentFlag    = "allow-concurrent"
-	fastOverRevertibleFlag = "fast-over-revertible"
+	preferInstantDDL       = "prefer-instant-ddl"
 	fastRangeRotationFlag  = "fast-range-rotation"
+	retainArtifactsFlag    = "retain-artifacts"
 	vreplicationTestSuite  = "vreplication-test-suite"
+	allowForeignKeysFlag   = "unsafe-allow-foreign-keys"
 )
 
 // DDLStrategy suggests how an ALTER TABLE should run (e.g. "direct", "online", "gh-ost" or "pt-osc")
 type DDLStrategy string
 
 const (
-	// DDLStrategyDirect means not an online-ddl migration. Just a normal MySQL ALTER TABLE
+	// DDLStrategyDirect means not an online-ddl migration; unmanaged. Just a normal MySQL `ALTER TABLE`
 	DDLStrategyDirect DDLStrategy = "direct"
 	// DDLStrategyVitess requests vreplication to run the migration; new name for DDLStrategyOnline
 	DDLStrategyVitess DDLStrategy = "vitess"
@@ -55,13 +61,15 @@ const (
 	DDLStrategyGhost DDLStrategy = "gh-ost"
 	// DDLStrategyPTOSC requests pt-online-schema-change to run the migration
 	DDLStrategyPTOSC DDLStrategy = "pt-osc"
+	// DDLStrategyMySQL is a managed migration (queued and executed by the scheduler) but runs through a MySQL `ALTER TABLE`
+	DDLStrategyMySQL DDLStrategy = "mysql"
 )
 
 // IsDirect returns true if this strategy is a direct strategy
 // A strategy is direct if it's not explciitly one of the online DDL strategies
 func (s DDLStrategy) IsDirect() bool {
 	switch s {
-	case DDLStrategyVitess, DDLStrategyOnline, DDLStrategyGhost, DDLStrategyPTOSC:
+	case DDLStrategyVitess, DDLStrategyOnline, DDLStrategyGhost, DDLStrategyPTOSC, DDLStrategyMySQL:
 		return false
 	}
 	return true
@@ -93,10 +101,13 @@ func ParseDDLStrategy(strategyVariable string) (*DDLStrategySetting, error) {
 	switch strategy := DDLStrategy(strategyName); strategy {
 	case "": // backward compatiblity and to handle unspecified values
 		setting.Strategy = DDLStrategyDirect
-	case DDLStrategyVitess, DDLStrategyOnline, DDLStrategyGhost, DDLStrategyPTOSC, DDLStrategyDirect:
+	case DDLStrategyVitess, DDLStrategyOnline, DDLStrategyGhost, DDLStrategyPTOSC, DDLStrategyMySQL, DDLStrategyDirect:
 		setting.Strategy = strategy
 	default:
 		return nil, fmt.Errorf("Unknown online DDL strategy: '%v'", strategy)
+	}
+	if _, err := setting.RetainArtifactsDuration(); err != nil {
+		return nil, err
 	}
 	return setting, nil
 }
@@ -123,54 +134,91 @@ func (setting *DDLStrategySetting) hasFlag(name string) bool {
 	return false
 }
 
-// IsDeclarative checks if strategy options include -declarative
+// IsDeclarative checks if strategy options include --declarative
 func (setting *DDLStrategySetting) IsDeclarative() bool {
 	return setting.hasFlag(declarativeFlag)
 }
 
-// IsSingleton checks if strategy options include -singleton
+// IsSingleton checks if strategy options include --singleton
 func (setting *DDLStrategySetting) IsSingleton() bool {
 	return setting.hasFlag(singletonFlag)
 }
 
-// IsSingletonContext checks if strategy options include -singleton-context
+// IsSingletonContext checks if strategy options include --singleton-context
 func (setting *DDLStrategySetting) IsSingletonContext() bool {
 	return setting.hasFlag(singletonContextFlag)
 }
 
-// IsAllowZeroInDateFlag checks if strategy options include -allow-zero-in-date
+// IsAllowZeroInDateFlag checks if strategy options include --allow-zero-in-date
 func (setting *DDLStrategySetting) IsAllowZeroInDateFlag() bool {
 	return setting.hasFlag(allowZeroInDateFlag)
 }
 
-// IsPostponeLaunch checks if strategy options include -postpone-launch
+// IsPostponeLaunch checks if strategy options include --postpone-launch
 func (setting *DDLStrategySetting) IsPostponeLaunch() bool {
 	return setting.hasFlag(postponeLaunchFlag)
 }
 
-// IsPostponeCompletion checks if strategy options include -postpone-completion
+// IsPostponeCompletion checks if strategy options include --postpone-completion
 func (setting *DDLStrategySetting) IsPostponeCompletion() bool {
 	return setting.hasFlag(postponeCompletionFlag)
 }
 
-// IsAllowConcurrent checks if strategy options include -allow-concurrent
+// IsInOrderCompletion checks if strategy options include --in-order-completion
+func (setting *DDLStrategySetting) IsInOrderCompletion() bool {
+	return setting.hasFlag(inOrderCompletionFlag)
+}
+
+// IsAllowConcurrent checks if strategy options include --allow-concurrent
 func (setting *DDLStrategySetting) IsAllowConcurrent() bool {
 	return setting.hasFlag(allowConcurrentFlag)
 }
 
-// IsFastOverRevertibleFlag checks if strategy options include -fast-over-revertible
-func (setting *DDLStrategySetting) IsFastOverRevertibleFlag() bool {
-	return setting.hasFlag(fastOverRevertibleFlag)
+// IsPreferInstantDDL checks if strategy options include --prefer-instant-ddl
+func (setting *DDLStrategySetting) IsPreferInstantDDL() bool {
+	return setting.hasFlag(preferInstantDDL)
 }
 
-// IsFastRangeRotationFlag checks if strategy options include -fast-range-rotation
+// IsFastRangeRotationFlag checks if strategy options include --fast-range-rotation
 func (setting *DDLStrategySetting) IsFastRangeRotationFlag() bool {
 	return setting.hasFlag(fastRangeRotationFlag)
 }
 
-// IsVreplicationTestSuite checks if strategy options include -vreplicatoin-test-suite
+// isRetainArtifactsFlag returns true when given option denotes a `--retain-artifacts=[...]` flag
+func isRetainArtifactsFlag(opt string) (string, bool) {
+	submatch := retainArtifactsFlagRegexp.FindStringSubmatch(opt)
+	if len(submatch) == 0 {
+		return "", false
+	}
+	return submatch[1], true
+}
+
+// RetainArtifactsDuration returns a the duration indicated by --retain-artifacts
+func (setting *DDLStrategySetting) RetainArtifactsDuration() (d time.Duration, err error) {
+	// We do some ugly manual parsing of --retain-artifacts
+	opts, _ := shlex.Split(setting.Options)
+	for _, opt := range opts {
+		if val, isRetainArtifacts := isRetainArtifactsFlag(opt); isRetainArtifacts {
+			// value is possibly quoted
+			if s, err := strconv.Unquote(val); err == nil {
+				val = s
+			}
+			if val != "" {
+				d, err = time.ParseDuration(val)
+			}
+		}
+	}
+	return d, err
+}
+
+// IsVreplicationTestSuite checks if strategy options include --vreplicatoin-test-suite
 func (setting *DDLStrategySetting) IsVreplicationTestSuite() bool {
 	return setting.hasFlag(vreplicationTestSuite)
+}
+
+// IsAllowForeignKeysFlag checks if strategy options include --unsafe-allow-foreign-keys
+func (setting *DDLStrategySetting) IsAllowForeignKeysFlag() bool {
+	return setting.hasFlag(allowForeignKeysFlag)
 }
 
 // RuntimeOptions returns the options used as runtime flags for given strategy, removing any internal hint options
@@ -178,6 +226,9 @@ func (setting *DDLStrategySetting) RuntimeOptions() []string {
 	opts, _ := shlex.Split(setting.Options)
 	validOpts := []string{}
 	for _, opt := range opts {
+		if _, ok := isRetainArtifactsFlag(opt); ok {
+			continue
+		}
 		switch {
 		case isFlag(opt, declarativeFlag):
 		case isFlag(opt, skipTopoFlag):
@@ -186,10 +237,12 @@ func (setting *DDLStrategySetting) RuntimeOptions() []string {
 		case isFlag(opt, allowZeroInDateFlag):
 		case isFlag(opt, postponeLaunchFlag):
 		case isFlag(opt, postponeCompletionFlag):
+		case isFlag(opt, inOrderCompletionFlag):
 		case isFlag(opt, allowConcurrentFlag):
-		case isFlag(opt, fastOverRevertibleFlag):
+		case isFlag(opt, preferInstantDDL):
 		case isFlag(opt, fastRangeRotationFlag):
 		case isFlag(opt, vreplicationTestSuite):
+		case isFlag(opt, allowForeignKeysFlag):
 		default:
 			validOpts = append(validOpts, opt)
 		}

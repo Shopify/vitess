@@ -41,7 +41,6 @@ type Tokenizer struct {
 	lastToken      string
 	posVarIndex    int
 	partialDDL     Statement
-	nesting        int
 	multi          bool
 	specialComment *Tokenizer
 
@@ -597,7 +596,11 @@ func (tkn *Tokenizer) scanStringSlow(buffer *strings.Builder, delim uint16, typ 
 				// String terminates mid escape character.
 				return LEX_ERROR, buffer.String()
 			}
-			if decodedChar := sqltypes.SQLDecodeMap[byte(tkn.cur())]; decodedChar == sqltypes.DontEscape {
+			// Preserve escaping of % and _
+			if tkn.cur() == '%' || tkn.cur() == '_' {
+				buffer.WriteByte('\\')
+				ch = tkn.cur()
+			} else if decodedChar := sqltypes.SQLDecodeMap[byte(tkn.cur())]; decodedChar == sqltypes.DontEscape {
 				ch = tkn.cur()
 			} else {
 				ch = uint16(decodedChar)
@@ -670,7 +673,7 @@ func (tkn *Tokenizer) scanMySQLSpecificComment() (int, string) {
 
 	commentVersion, sql := ExtractMysqlComment(tkn.buf[start:tkn.Pos])
 
-	if MySQLVersion >= commentVersion {
+	if mySQLParserVersion >= commentVersion {
 		// Only add the special comment to the tokenizer if the version of MySQL is higher or equal to the comment version
 		tkn.specialComment = NewStringTokenizer(sql)
 	}
@@ -699,7 +702,6 @@ func (tkn *Tokenizer) reset() {
 	tkn.partialDDL = nil
 	tkn.specialComment = nil
 	tkn.posVarIndex = 0
-	tkn.nesting = 0
 	tkn.SkipToEnd = false
 }
 

@@ -1,6 +1,6 @@
 # Changelog
 
-List of changes between bootstrap image versions. 
+List of changes between bootstrap image versions.
 
 ## [1] - 2020-12-18
 ### Changes
@@ -25,7 +25,7 @@ List of changes between bootstrap image versions.
 ## [6] - 2022-04-15
 ### Changes
 - Update build to golang 1.18.1
- 
+
 ## [7] - N/A
 - Skipped because new images did not change `bootstrap-version` in `test.go`
 
@@ -50,6 +50,46 @@ List of changes between bootstrap image versions.
 ### Changes
 - Update build to golang 1.18.7
 
-## [12] - 2022-12-08
+## [13] - 2022-12-08
 ### Changes
-- Update build to golang 1.18.9
+- Update build to golang 1.19.4
+
+## [14] - 2023-02-21
+### Changes
+- Update build to golang 1.20.1
+
+## [14.2] - 2023-03-27
+### Changes
+- Update build to golang 1.20.2
+
+## [14.3] - 2023-04-05
+### Changes
+- Update build to golang 1.20.3
+
+## [14.4] - 2023-05-09
+### Changes
+- Update build to golang 1.20.4
+
+## [14.5] - 2023-06-07
+### Changes
+- Update build to golang 1.20.5
+
+## [14.6] - 2023-09-07
+### Changes
+- Update build to golang 1.20.8
+
+## [14.7] - 2023-09-06
+### Changes
+- Use Debian Bullseye as base bootstrap image in order to continue upgrading the Golang version
+
+## [14.8] - 2023-10-05
+### Changes
+- Update build to golang 1.20.9
+
+## [14.9] - 2023-10-10
+### Changes
+- Update build to golang 1.20.10
+
+## [14.10] - 2023-11-08
+### Changes
+- Update build to golang 1.20.11

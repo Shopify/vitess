@@ -25,10 +25,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"vitess.io/vitess/go/mysql/fakesqldb"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"vitess.io/vitess/go/mysql/fakesqldb"
 
 	"vitess.io/vitess/go/sync2"
 	"vitess.io/vitess/go/vt/log"
@@ -459,16 +459,15 @@ func TestStateManagerCheckMySQL(t *testing.T) {
 	sm.te = &delayedTxEngine{}
 	sm.qe.(*testQueryEngine).failMySQL = true
 	order.Set(0)
-	sm.CheckMySQL()
+	sm.checkMySQL()
 	// We know checkMySQL will take atleast 50 milliseconds since txEngine.Close has a sleep in the test code
 	time.Sleep(10 * time.Millisecond)
-	// this asserts that checkMySQL is running
-	assert.EqualValues(t, 0, sm.checkMySQLThrottler.Size())
+	assert.EqualValues(t, 1, sm.isCheckMySQLRunning())
 	// When we are in CheckMySQL state, we should not be accepting any new requests which aren't transactional
 	assert.False(t, sm.IsServing())
 
 	// Rechecking immediately should be a no-op:
-	sm.CheckMySQL()
+	sm.checkMySQL()
 
 	// Wait for closeAll to get under way.
 	for {
@@ -500,6 +499,20 @@ func TestStateManagerCheckMySQL(t *testing.T) {
 	assert.True(t, sm.IsServing())
 	assert.Equal(t, topodatapb.TabletType_PRIMARY, sm.Target().TabletType)
 	assert.Equal(t, StateServing, sm.State())
+
+	// Wait for checkMySQL to finish.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("Timedout waiting for checkMySQL to finish")
+		default:
+			if sm.isCheckMySQLRunning() == 0 {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 func TestStateManagerValidations(t *testing.T) {
@@ -639,7 +652,7 @@ func TestStateManagerNotify(t *testing.T) {
 		TabletAlias: &topodatapb.TabletAlias{},
 	}
 	sm.hcticks.Stop()
-	assert.Equal(t, wantshr, gotshr)
+	assert.Truef(t, proto.Equal(gotshr, wantshr), "got: %v, want: %v", gotshr, wantshr)
 	sm.StopService()
 }
 

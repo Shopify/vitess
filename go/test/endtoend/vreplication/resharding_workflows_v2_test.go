@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,6 +64,7 @@ func createReshardWorkflow(t *testing.T, sourceShards, targetShards string) erro
 		"", workflowActionCreate, "", sourceShards, targetShards)
 	require.NoError(t, err)
 	waitForWorkflowState(t, vc, ksWorkflow, workflowStateRunning)
+	confirmTablesHaveSecondaryKeys(t, []*cluster.VttabletProcess{targetTab1}, targetKs, "")
 	catchup(t, targetTab1, workflowName, "Reshard")
 	catchup(t, targetTab2, workflowName, "Reshard")
 	vdiff1(t, ksWorkflow, "")
@@ -77,6 +79,7 @@ func createMoveTablesWorkflow(t *testing.T, tables string) {
 		tables, workflowActionCreate, "", "", "")
 	require.NoError(t, err)
 	waitForWorkflowState(t, vc, ksWorkflow, workflowStateRunning)
+	confirmTablesHaveSecondaryKeys(t, []*cluster.VttabletProcess{targetTab1}, targetKs, tables)
 	catchup(t, targetTab1, workflowName, "MoveTables")
 	catchup(t, targetTab2, workflowName, "MoveTables")
 	vdiff1(t, ksWorkflow, "")
@@ -109,6 +112,11 @@ func tstWorkflowExec(t *testing.T, cells, workflow, sourceKs, targetKs, tables, 
 			}
 		} else {
 			args = append(args, "--source_shards", sourceShards, "--target_shards", targetShards)
+		}
+		// Test new experimental --defer-secondary-keys flag
+		switch currentWorkflowType {
+		case wrangler.MoveTablesWorkflow, wrangler.MigrateWorkflow, wrangler.ReshardWorkflow:
+			args = append(args, "--defer-secondary-keys")
 		}
 	}
 	if cells != "" {
@@ -149,13 +157,13 @@ func tstWorkflowReverseWrites(t *testing.T) {
 	require.NoError(t, tstWorkflowAction(t, workflowActionReverseTraffic, "primary", ""))
 }
 
-// tstWorkflowSwitchReadsAndWrites tests that SwitchWrites w/o any user provided --tablet_types
+// tstWorkflowSwitchReadsAndWrites tests that switching traffic w/o any user provided --tablet_types
 // value switches all traffic
 func tstWorkflowSwitchReadsAndWrites(t *testing.T) {
 	require.NoError(t, tstWorkflowAction(t, workflowActionSwitchTraffic, "", ""))
 }
 
-// tstWorkflowReversesReadsAndWrites tests that SwitchWrites w/o any user provided --tablet_types
+// tstWorkflowReversesReadsAndWrites tests that ReverseTraffic w/o any user provided --tablet_types
 // value switches all traffic in reverse
 func tstWorkflowReverseReadsAndWrites(t *testing.T) {
 	require.NoError(t, tstWorkflowAction(t, workflowActionReverseTraffic, "", ""))
@@ -205,25 +213,15 @@ func validateWritesRouteToTarget(t *testing.T) {
 	execVtgateQuery(t, vtgateConn, "customer", "delete from customer where cid > 100")
 }
 
-func revert(t *testing.T) {
-	switchWrites(t, reverseKsWorkflow, false)
+func revert(t *testing.T, workflowType string) {
+	switchWrites(t, workflowType, ksWorkflow, true)
 	validateWritesRouteToSource(t)
-	switchReadsNew(t, allCellNames, ksWorkflow, true)
+	switchReadsNew(t, workflowType, allCellNames, ksWorkflow, true)
 	validateReadsRouteToSource(t, "replica")
-	queries := []string{
-		"delete from _vt.vreplication",
-		"delete from _vt.resharding_journal",
-	}
 
-	for _, query := range queries {
-		targetTab1.QueryTablet(query, "customer", true)
-		targetTab2.QueryTablet(query, "customer", true)
-		sourceTab.QueryTablet(query, "product", true)
-	}
-	targetTab1.QueryTablet("drop table vt_customer.customer", "customer", true)
-	targetTab2.QueryTablet("drop table vt_customer.customer", "customer", true)
-
-	clearRoutingRules(t, vc)
+	// cancel the workflow to cleanup
+	_, err := vc.VtctlClient.ExecuteCommandWithOutput(workflowType, "--", "Cancel", ksWorkflow)
+	require.NoError(t, err, fmt.Sprintf("%s Cancel error: %v", workflowType, err))
 }
 
 func checkStates(t *testing.T, startState, endState string) {
@@ -243,7 +241,14 @@ func getCurrentState(t *testing.T) string {
 
 func TestBasicV2Workflows(t *testing.T) {
 	defaultRdonly = 1
-	defer func() { defaultRdonly = 0 }()
+	extraVTTabletArgs = []string{
+		parallelInsertWorkers,
+	}
+	defer func() {
+		defaultRdonly = 0
+		extraVTTabletArgs = []string{}
+	}()
+
 	vc = setupCluster(t)
 	defer vtgateConn.Close()
 	defer vc.TearDown(t)
@@ -430,7 +435,7 @@ func testMoveTablesV2Workflow(t *testing.T) {
 }
 
 func testPartialSwitches(t *testing.T) {
-	//nothing switched
+	// nothing switched
 	require.Equal(t, getCurrentState(t), wrangler.WorkflowStateNotSwitched)
 	tstWorkflowSwitchReads(t, "replica,rdonly", "zone1")
 	nextState := "Reads partially switched. Replica switched in cells: zone1. Rdonly switched in cells: zone1. Writes Not Switched"
@@ -442,7 +447,7 @@ func testPartialSwitches(t *testing.T) {
 	checkStates(t, currentState, nextState)
 
 	tstWorkflowSwitchReads(t, "", "")
-	checkStates(t, nextState, nextState) //idempotency
+	checkStates(t, nextState, nextState) // idempotency
 
 	tstWorkflowSwitchWrites(t)
 	currentState = nextState
@@ -450,7 +455,7 @@ func testPartialSwitches(t *testing.T) {
 	checkStates(t, currentState, nextState)
 
 	tstWorkflowSwitchWrites(t)
-	checkStates(t, nextState, nextState) //idempotency
+	checkStates(t, nextState, nextState) // idempotency
 
 	keyspace := "product"
 	if currentWorkflowType == wrangler.ReshardWorkflow {
@@ -566,9 +571,10 @@ func setupCluster(t *testing.T) *VitessCluster {
 
 	vtgate = zone1.Vtgates[0]
 	require.NotNil(t, vtgate)
-	vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.primary", "product", "0"), 1)
-	vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", "product", "0"), 2)
-	vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", "product", "0"), 1)
+	err := cluster.WaitForHealthyShard(vc.VtctldClient, "product", "0")
+	require.NoError(t, err)
+	require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", "product", "0"), 2, 30*time.Second))
+	require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", "product", "0"), 1, 30*time.Second))
 
 	vtgateConn = getConnection(t, vc.ClusterConfig.hostname, vc.ClusterConfig.vtgateMySQLPort)
 	verifyClusterHealth(t, vc)
@@ -586,24 +592,12 @@ func setupCustomerKeyspace(t *testing.T) {
 		customerVSchema, customerSchema, defaultReplicas, defaultRdonly, 200, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.primary", "customer", "-80"), 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.primary", "customer", "80-"), 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", "customer", "-80"), 2); err != nil {
-		t.Fatal(err)
-	}
-	if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", "customer", "80-"), 2); err != nil {
-		t.Fatal(err)
-	}
-	if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", "customer", "-80"), 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", "customer", "80-"), 1); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, cluster.WaitForHealthyShard(vc.VtctldClient, "customer", "-80"))
+	require.NoError(t, cluster.WaitForHealthyShard(vc.VtctldClient, "customer", "80-"))
+	require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", "customer", "-80"), 2, 30*time.Second))
+	require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", "customer", "80-"), 2, 30*time.Second))
+	require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", "customer", "-80"), 1, 30*time.Second))
+	require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", "customer", "80-"), 1, 30*time.Second))
 	custKs := vc.Cells[defaultCell.Name].Keyspaces["customer"]
 	targetTab1 = custKs.Shards["-80"].Tablets["zone1-200"].Vttablet
 	targetTab2 = custKs.Shards["80-"].Tablets["zone1-300"].Vttablet
@@ -619,18 +613,13 @@ func setupCustomer2Keyspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c2shard := range c2shards {
-		if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.primary", c2keyspace, c2shard), 1); err != nil {
-			t.Fatal(err)
-		}
+		err := cluster.WaitForHealthyShard(vc.VtctldClient, c2keyspace, c2shard)
+		require.NoError(t, err)
 		if defaultReplicas > 0 {
-			if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", c2keyspace, c2shard), defaultReplicas); err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", c2keyspace, c2shard), defaultReplicas, 30*time.Second))
 		}
 		if defaultRdonly > 0 {
-			if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", c2keyspace, c2shard), defaultRdonly); err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", c2keyspace, c2shard), defaultRdonly, 30*time.Second))
 		}
 	}
 }
@@ -641,9 +630,13 @@ func TestSwitchReadsWritesInAnyOrder(t *testing.T) {
 	moveCustomerTableSwitchFlows(t, []*Cell{vc.Cells["zone1"]}, "zone1")
 }
 
-func switchReadsNew(t *testing.T, cells, ksWorkflow string, reverse bool) {
-	output, err := vc.VtctlClient.ExecuteCommandWithOutput("SwitchReads", "--", "--cells="+cells,
-		"--tablet_types=rdonly,replica", fmt.Sprintf("--reverse=%t", reverse), ksWorkflow)
+func switchReadsNew(t *testing.T, workflowType, cells, ksWorkflow string, reverse bool) {
+	command := "SwitchTraffic"
+	if reverse {
+		command = "ReverseTraffic"
+	}
+	output, err := vc.VtctlClient.ExecuteCommandWithOutput(workflowType, "--", "--cells="+cells,
+		"--tablet_types=rdonly,replica", command, ksWorkflow)
 	require.NoError(t, err, fmt.Sprintf("SwitchReads Error: %s: %s", err, output))
 	if output != "" {
 		fmt.Printf("SwitchReads output: %s\n", output)
@@ -657,11 +650,12 @@ func moveCustomerTableSwitchFlows(t *testing.T, cells []*Cell, sourceCellOrAlias
 	ksWorkflow := fmt.Sprintf("%s.%s", targetKs, workflow)
 	tables := "customer"
 	setupCustomerKeyspace(t)
+	workflowType := "MoveTables"
 
 	var moveTablesAndWait = func() {
-		moveTables(t, sourceCellOrAlias, workflow, sourceKs, targetKs, tables)
-		catchup(t, targetTab1, workflow, "MoveTables")
-		catchup(t, targetTab2, workflow, "MoveTables")
+		moveTablesAction(t, "Create", sourceCellOrAlias, workflow, sourceKs, targetKs, tables)
+		catchup(t, targetTab1, workflow, workflowType)
+		catchup(t, targetTab2, workflow, workflowType)
 		vdiff1(t, ksWorkflow, "")
 	}
 
@@ -669,71 +663,71 @@ func moveCustomerTableSwitchFlows(t *testing.T, cells []*Cell, sourceCellOrAlias
 		moveTablesAndWait()
 
 		validateReadsRouteToSource(t, "replica")
-		switchReadsNew(t, allCellNames, ksWorkflow, false)
+		switchReadsNew(t, workflowType, allCellNames, ksWorkflow, false)
 		validateReadsRouteToTarget(t, "replica")
 
 		validateWritesRouteToSource(t)
-		switchWrites(t, ksWorkflow, false)
+		switchWrites(t, workflowType, ksWorkflow, false)
 		validateWritesRouteToTarget(t)
 
-		revert(t)
+		revert(t, workflowType)
 	}
 	var switchWritesFollowedBySwitchReads = func() {
 		moveTablesAndWait()
 
 		validateWritesRouteToSource(t)
-		switchWrites(t, ksWorkflow, false)
+		switchWrites(t, workflowType, ksWorkflow, false)
 		validateWritesRouteToTarget(t)
 
 		validateReadsRouteToSource(t, "replica")
-		switchReadsNew(t, allCellNames, ksWorkflow, false)
+		switchReadsNew(t, workflowType, allCellNames, ksWorkflow, false)
 		validateReadsRouteToTarget(t, "replica")
 
-		revert(t)
+		revert(t, workflowType)
 	}
 
 	var switchReadsReverseSwitchWritesSwitchReads = func() {
 		moveTablesAndWait()
 
 		validateReadsRouteToSource(t, "replica")
-		switchReadsNew(t, allCellNames, ksWorkflow, false)
+		switchReadsNew(t, workflowType, allCellNames, ksWorkflow, false)
 		validateReadsRouteToTarget(t, "replica")
 
-		switchReadsNew(t, allCellNames, ksWorkflow, true)
+		switchReadsNew(t, workflowType, allCellNames, ksWorkflow, true)
 		validateReadsRouteToSource(t, "replica")
-		printRoutingRules(t, vc, "After reversing SwitchReads")
+		printRoutingRules(t, vc, "After reversing read traffic")
 
 		validateWritesRouteToSource(t)
-		switchWrites(t, ksWorkflow, false)
+		switchWrites(t, workflowType, ksWorkflow, false)
 		validateWritesRouteToTarget(t)
 
-		printRoutingRules(t, vc, "After SwitchWrites and reversing SwitchReads")
+		printRoutingRules(t, vc, "After switching writes and reversing reads")
 		validateReadsRouteToSource(t, "replica")
-		switchReadsNew(t, allCellNames, ksWorkflow, false)
+		switchReadsNew(t, workflowType, allCellNames, ksWorkflow, false)
 		validateReadsRouteToTarget(t, "replica")
 
-		revert(t)
+		revert(t, workflowType)
 	}
 
 	var switchWritesReverseSwitchReadsSwitchWrites = func() {
 		moveTablesAndWait()
 
 		validateWritesRouteToSource(t)
-		switchWrites(t, ksWorkflow, false)
+		switchWrites(t, workflowType, ksWorkflow, false)
 		validateWritesRouteToTarget(t)
 
-		switchWrites(t, reverseKsWorkflow, true)
+		switchWrites(t, workflowType, reverseKsWorkflow, true)
 		validateWritesRouteToSource(t)
 
 		validateReadsRouteToSource(t, "replica")
-		switchReadsNew(t, allCellNames, ksWorkflow, false)
+		switchReadsNew(t, workflowType, allCellNames, ksWorkflow, false)
 		validateReadsRouteToTarget(t, "replica")
 
 		validateWritesRouteToSource(t)
-		switchWrites(t, ksWorkflow, false)
+		switchWrites(t, workflowType, ksWorkflow, false)
 		validateWritesRouteToTarget(t)
 
-		revert(t)
+		revert(t, workflowType)
 
 	}
 	switchReadsFollowedBySwitchWrites()
@@ -749,15 +743,10 @@ func createAdditionalCustomerShards(t *testing.T, shards string) {
 	arrTargetShardNames := strings.Split(shards, ",")
 
 	for _, shardName := range arrTargetShardNames {
-		if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.primary", ksName, shardName), 1); err != nil {
-			require.NoError(t, err)
-		}
-		if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", ksName, shardName), 2); err != nil {
-			require.NoError(t, err)
-		}
-		if err := vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", ksName, shardName), 1); err != nil {
-			require.NoError(t, err)
-		}
+		err := cluster.WaitForHealthyShard(vc.VtctldClient, ksName, shardName)
+		require.NoError(t, err)
+		require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.replica", ksName, shardName), 2, 30*time.Second))
+		require.NoError(t, vtgate.WaitForStatusOfTabletInShard(fmt.Sprintf("%s.%s.rdonly", ksName, shardName), 1, 30*time.Second))
 	}
 	custKs := vc.Cells[defaultCell.Name].Keyspaces[ksName]
 	targetTab2 = custKs.Shards["80-c0"].Tablets["zone1-600"].Vttablet

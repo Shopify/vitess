@@ -373,7 +373,7 @@
   {
     "comment": "set system settings",
     "query": "set @@ndbinfo_max_bytes = 192",
-    "plan": "ndbinfo_max_bytes: system setting is not supported"
+    "plan": "VT12001: unsupported: system setting: ndbinfo_max_bytes"
   },
   {
     "comment": "set autocommit",
@@ -531,16 +531,56 @@
   {
     "comment": "change read only variable",
     "query": "set socket = ''",
-    "plan": "variable 'socket' is a read only variable"
+    "plan": "VT03010: variable 'socket' is a read only variable"
   },
   {
-    "comment": "set transaction",
-    "query": "set transaction read only",
+    "comment": "set transaction read only",
+    "query": "set session transaction read only",
     "plan": {
       "QueryType": "SET",
-      "Original": "set transaction read only",
+      "Original": "set session transaction read only",
       "Instructions": {
-        "OperatorType": "Rows"
+        "OperatorType": "Set",
+        "Ops": [
+          {
+            "Type": "SysVarAware",
+            "Name": "transaction_read_only",
+            "Expr": "INT64(1)"
+          }
+        ],
+        "Inputs": [
+          {
+            "OperatorType": "SingleRow"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "comment": "set transaction isolation level",
+    "query": "set transaction isolation level read committed",
+    "plan": {
+      "QueryType": "SET",
+      "Original": "set transaction isolation level read committed",
+      "Instructions": {
+        "OperatorType": "Set",
+        "Ops": [
+          {
+            "Type": "SysVarSet",
+            "Name": "transaction_isolation",
+            "Keyspace": {
+              "Name": "main",
+              "Sharded": false
+            },
+            "Expr": "'READ-COMMITTED'",
+            "SupportSetVar": false
+          }
+        ],
+        "Inputs": [
+          {
+            "OperatorType": "SingleRow"
+          }
+        ]
       }
     }
   },

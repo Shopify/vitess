@@ -233,6 +233,17 @@ func (mysqld *Mysqld) IsReadOnly() (bool, error) {
 
 // SetReadOnly set/unset the read_only flag
 func (mysqld *Mysqld) SetReadOnly(on bool) error {
+	// temp logging, to be removed in v17
+	var newState string
+	switch on {
+	case false:
+		newState = "ReadWrite"
+	case true:
+		newState = "ReadOnly"
+	}
+	log.Infof("SetReadOnly setting connection setting of %s:%d to : %s",
+		mysqld.dbcfgs.Host, mysqld.dbcfgs.Port, newState)
+
 	query := "SET GLOBAL read_only = "
 	if on {
 		query += "ON"
@@ -396,14 +407,6 @@ func (mysqld *Mysqld) SetReplicationSource(ctx context.Context, host string, por
 	if replicationStopBefore {
 		cmds = append(cmds, conn.StopReplicationCommand())
 	}
-	// Reset replication parameters commands makes the instance forget the source host port
-	// This is required because sometimes MySQL gets stuck due to improper initialization of
-	// master info structure or related failures and throws errors like
-	// ERROR 1201 (HY000): Could not initialize master info structure; more error messages can be found in the MySQL error log
-	// These errors can only be resolved by resetting the replication parameters, otherwise START SLAVE fails.
-	// Therefore, we have elected to always reset the replication parameters whenever we try to set the source host port
-	// Since there is no real overhead, but it makes this function robust enough to also handle failures like these.
-	cmds = append(cmds, conn.ResetReplicationParametersCommands()...)
 	smc := conn.SetReplicationSourceCommand(params, host, port, int(replicationConnectRetry.Seconds()))
 	cmds = append(cmds, smc)
 	if replicationStartAfter {
@@ -577,6 +580,44 @@ func (mysqld *Mysqld) GetGTIDMode(ctx context.Context) (string, error) {
 	defer conn.Recycle()
 
 	return conn.GetGTIDMode()
+}
+
+// FlushBinaryLogs is part of the MysqlDaemon interface.
+func (mysqld *Mysqld) FlushBinaryLogs(ctx context.Context) (err error) {
+	_, err = mysqld.FetchSuperQuery(ctx, "FLUSH BINARY LOGS")
+	return err
+}
+
+// GetBinaryLogs is part of the MysqlDaemon interface.
+func (mysqld *Mysqld) GetBinaryLogs(ctx context.Context) (binaryLogs []string, err error) {
+	qr, err := mysqld.FetchSuperQuery(ctx, "SHOW BINARY LOGS")
+	if err != nil {
+		return binaryLogs, err
+	}
+	for _, row := range qr.Rows {
+		binaryLogs = append(binaryLogs, row[0].ToString())
+	}
+	return binaryLogs, err
+}
+
+// GetPreviousGTIDs is part of the MysqlDaemon interface.
+func (mysqld *Mysqld) GetPreviousGTIDs(ctx context.Context, binlog string) (previousGtids string, err error) {
+	query := fmt.Sprintf("SHOW BINLOG EVENTS IN '%s' LIMIT 2", binlog)
+	qr, err := mysqld.FetchSuperQuery(ctx, query)
+	if err != nil {
+		return previousGtids, err
+	}
+	previousGtidsFound := false
+	for _, row := range qr.Named().Rows {
+		if row.AsString("Event_type", "") == "Previous_gtids" {
+			previousGtids = row.AsString("Info", "")
+			previousGtidsFound = true
+		}
+	}
+	if !previousGtidsFound {
+		return previousGtids, fmt.Errorf("GetPreviousGTIDs: previous GTIDs not found")
+	}
+	return previousGtids, nil
 }
 
 // SetSemiSyncEnabled enables or disables semi-sync replication for

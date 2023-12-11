@@ -71,7 +71,16 @@ func (vtctld *VtctldProcess) Setup(cell string, extraArgs ...string) (err error)
 	}
 	vtctld.proc.Args = append(vtctld.proc.Args, extraArgs...)
 
-	errFile, _ := os.Create(path.Join(vtctld.LogDir, "vtctld-stderr.txt"))
+	err = os.MkdirAll(vtctld.LogDir, 0755)
+	if err != nil {
+		log.Errorf("cannot create log directory for vtctld: %v", err)
+		return err
+	}
+	errFile, err := os.Create(path.Join(vtctld.LogDir, "vtctld-stderr.txt"))
+	if err != nil {
+		log.Errorf("cannot create error log file for vtctld: %v", err)
+		return err
+	}
 	vtctld.proc.Stderr = errFile
 
 	vtctld.proc.Env = append(vtctld.proc.Env, os.Environ()...)
@@ -86,6 +95,7 @@ func (vtctld *VtctldProcess) Setup(cell string, extraArgs ...string) (err error)
 	vtctld.exit = make(chan error)
 	go func() {
 		vtctld.exit <- vtctld.proc.Wait()
+		close(vtctld.exit)
 	}()
 
 	timeout := time.Now().Add(60 * time.Second)
@@ -137,8 +147,9 @@ func (vtctld *VtctldProcess) TearDown() error {
 
 	case <-time.After(10 * time.Second):
 		vtctld.proc.Process.Kill()
+		err := <-vtctld.exit
 		vtctld.proc = nil
-		return <-vtctld.exit
+		return err
 	}
 }
 

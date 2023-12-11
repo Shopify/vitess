@@ -31,6 +31,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	querypb "vitess.io/vitess/go/vt/proto/query"
+	"vitess.io/vitess/go/vt/vttablet/tabletconn"
+
 	"vitess.io/vitess/go/json2"
 	"vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/sqltypes"
@@ -51,7 +54,7 @@ var (
 	id bigint,
 	msg varchar(64),
 	primary key (id)
-	) Engine=InnoDB	
+	) Engine=InnoDB
 `
 	cell1                  = "zone1"
 	cell2                  = "zone2"
@@ -60,7 +63,7 @@ var (
 	replicationWaitTimeout = time.Duration(15 * time.Second)
 )
 
-//region cluster setup/teardown
+// region cluster setup/teardown
 
 // SetupReparentCluster is used to setup the reparent cluster
 func SetupReparentCluster(t *testing.T, durability string) *cluster.LocalProcessCluster {
@@ -72,20 +75,31 @@ func SetupRangeBasedCluster(ctx context.Context, t *testing.T) *cluster.LocalPro
 	return setupCluster(ctx, t, ShardName, []string{cell1}, []int{2}, "semi_sync")
 }
 
-// TeardownCluster is used to teardown the reparent cluster
+// TeardownCluster is used to teardown the reparent cluster. When
+// run in a CI environment -- which is considered true when the
+// "CI" env variable is set to "true" -- the teardown also removes
+// the VTDATAROOT directory that was used for the test/cluster.
 func TeardownCluster(clusterInstance *cluster.LocalProcessCluster) {
+	usedRoot := clusterInstance.CurrentVTDATAROOT
 	clusterInstance.Teardown()
+	// This is always set to "true" on GitHub Actions runners:
+	// https://docs.github.com/en/actions/learn-github-actions/variables#default-environment-variables
+	ci, ok := os.LookupEnv("CI")
+	if !ok || strings.ToLower(ci) != "true" {
+		// Leave the directory in place to support local debugging.
+		return
+	}
+	// We're running in the CI, so free up disk space for any
+	// subsequent tests.
+	if err := os.RemoveAll(usedRoot); err != nil {
+		log.Errorf("Failed to remove previously used VTDATAROOT (%s): %v", usedRoot, err)
+	}
 }
 
 func setupCluster(ctx context.Context, t *testing.T, shardName string, cells []string, numTablets []int, durability string) *cluster.LocalProcessCluster {
 	var tablets []*cluster.Vttablet
 	clusterInstance := cluster.NewCluster(cells[0], Hostname)
 	keyspace := &cluster.Keyspace{Name: KeyspaceName}
-
-	// enable_semi_sync is removed in v16 and shouldn't be set on any release v16+
-	if durability == "semi_sync" && clusterInstance.VtTabletMajorVersion <= 15 {
-		clusterInstance.VtTabletExtraArgs = append(clusterInstance.VtTabletExtraArgs, "--enable_semi_sync")
-	}
 
 	// Start topo server
 	err := clusterInstance.StartTopo()
@@ -120,7 +134,6 @@ func setupCluster(ctx context.Context, t *testing.T, shardName string, cells []s
 	}
 	clusterInstance.VtTabletExtraArgs = append(clusterInstance.VtTabletExtraArgs,
 		"--lock_tables_timeout", "5s",
-		"--init_populate_metadata",
 		"--track_schema_versions=true",
 		// disabling online-ddl for reparent tests. This is done to reduce flakiness.
 		// All the tests in this package reparent frequently between different tablets
@@ -134,13 +147,13 @@ func setupCluster(ctx context.Context, t *testing.T, shardName string, cells []s
 		// the replication manager to silently fix the replication in case ERS or PRS mess up. All the
 		// tests in this test suite should work irrespective of this flag. Each run of ERS, PRS should be
 		// setting up the replication correctly.
-		disableReplicationFlag)
+		"--disable-replication-manager")
 
 	// Initialize Cluster
 	err = clusterInstance.SetupCluster(keyspace, []cluster.Shard{*shard})
 	require.NoError(t, err, "Cannot launch cluster")
 
-	//Start MySql
+	// Start MySql
 	var mysqlCtlProcessList []*exec.Cmd
 	for _, shard := range clusterInstance.Keyspaces[0].Shards {
 		for _, tablet := range shard.Vttablets {
@@ -219,11 +232,9 @@ func StartNewVTTablet(t *testing.T, clusterInstance *cluster.LocalProcessCluster
 		clusterInstance.TmpDirectory,
 		[]string{
 			"--lock_tables_timeout", "5s",
-			"--init_populate_metadata",
 			"--track_schema_versions=true",
 			"--queryserver_enable_online_ddl=false",
 		},
-		clusterInstance.EnableSemiSync,
 		clusterInstance.DefaultCharset)
 	tablet.VttabletProcess.SupportsBackup = supportsBackup
 
@@ -243,7 +254,7 @@ func StartNewVTTablet(t *testing.T, clusterInstance *cluster.LocalProcessCluster
 	return tablet
 }
 
-//endregion
+// endregion
 
 // region database queries
 func getMysqlConnParam(tablet *cluster.Vttablet) mysql.ConnParams {
@@ -271,7 +282,7 @@ func execute(t *testing.T, conn *mysql.Conn, query string) *sqltypes.Result {
 	return qr
 }
 
-//endregion
+// endregion
 
 // region ers, prs
 
@@ -703,5 +714,26 @@ func CheckReplicationStatus(ctx context.Context, t *testing.T, tablet *cluster.V
 		require.Equal(t, "Yes", res.Rows[0][11].ToString())
 	} else {
 		require.Equal(t, "No", res.Rows[0][11].ToString())
+	}
+}
+
+func WaitForTabletToBeServing(t *testing.T, clusterInstance *cluster.LocalProcessCluster, tablet *cluster.Vttablet, timeout time.Duration) {
+	vTablet, err := clusterInstance.VtctlclientGetTablet(tablet)
+	require.NoError(t, err)
+
+	tConn, err := tabletconn.GetDialer()(vTablet, false)
+	require.NoError(t, err)
+
+	newCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	err = tConn.StreamHealth(newCtx, func(shr *querypb.StreamHealthResponse) error {
+		if shr.Serving {
+			cancel()
+		}
+		return nil
+	})
+
+	// the error should only be because we cancelled the context when the tablet became serving again.
+	if err != nil && !strings.Contains(err.Error(), "context canceled") {
+		t.Fatal(err.Error())
 	}
 }

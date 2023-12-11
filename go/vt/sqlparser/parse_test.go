@@ -1112,23 +1112,35 @@ var (
 		input:  "set /* mixed list */ a = 3, names 'utf8', charset 'ascii', b = 4",
 		output: "set /* mixed list */ @@a = 3, names 'utf8', charset 'ascii', @@b = 4",
 	}, {
-		input: "set session transaction isolation level repeatable read",
+		input:  "set session transaction isolation level repeatable read",
+		output: "set @@session.transaction_isolation = 'repeatable-read'",
 	}, {
-		input: "set transaction isolation level repeatable read",
+		input:  "set transaction isolation level repeatable read",
+		output: "set @@transaction_isolation = 'repeatable-read'",
 	}, {
-		input: "set global transaction isolation level repeatable read",
+		input:  "set global transaction isolation level repeatable read",
+		output: "set @@global.transaction_isolation = 'repeatable-read'",
 	}, {
-		input: "set transaction isolation level repeatable read",
+		input:  "set transaction isolation level repeatable read",
+		output: "set @@transaction_isolation = 'repeatable-read'",
 	}, {
-		input: "set transaction isolation level read committed",
+		input:  "set transaction isolation level read committed",
+		output: "set @@transaction_isolation = 'read-committed'",
 	}, {
-		input: "set transaction isolation level read uncommitted",
+		input:  "set transaction isolation level read uncommitted",
+		output: "set @@transaction_isolation = 'read-uncommitted'",
 	}, {
-		input: "set transaction isolation level serializable",
+		input:  "set transaction isolation level serializable",
+		output: "set @@transaction_isolation = 'serializable'",
 	}, {
-		input: "set transaction read write",
+		input:  "set transaction read write",
+		output: "set @@transaction_read_only = 'off'",
 	}, {
-		input: "set transaction read only",
+		input:  "set transaction read only",
+		output: "set @@transaction_read_only = 'on'",
+	}, {
+		input:  "set session transaction read only, isolation level serializable",
+		output: "set @@session.transaction_read_only = 'on', @@session.transaction_isolation = 'serializable'",
 	}, {
 		input:  "set tx_read_only = 1",
 		output: "set @@tx_read_only = 1",
@@ -1137,10 +1149,14 @@ var (
 		output: "set @@tx_read_only = 0",
 	}, {
 		input:  "set transaction_read_only = 1",
-		output: "set @@transaction_read_only = 1",
+		output: "set @@session.transaction_read_only = 1",
 	}, {
 		input:  "set transaction_read_only = 0",
-		output: "set @@transaction_read_only = 0",
+		output: "set @@session.transaction_read_only = 0",
+	}, {
+		input: "set @@transaction_read_only = 1",
+	}, {
+		input: "set @@transaction_isolation = 'read-committed'",
 	}, {
 		input:  "set tx_isolation = 'repeatable read'",
 		output: "set @@tx_isolation = 'repeatable read'",
@@ -1222,6 +1238,12 @@ var (
 		input: "alter table a convert to character set utf32",
 	}, {
 		input: "alter table `By` add column foo int, algorithm = default",
+	}, {
+		input: "alter table `By` add column foo int, algorithm = copy",
+	}, {
+		input: "alter table `By` add column foo int, algorithm = inplace",
+	}, {
+		input: "alter table `By` add column foo int, algorithm = INPLACE",
 	}, {
 		input: "alter table `By` add column foo int, algorithm = instant",
 	}, {
@@ -1443,6 +1465,18 @@ var (
 	}, {
 		input:  "create table a (\n\ta float not null default -2.1\n)",
 		output: "create table a (\n\ta float not null default -2.1\n)",
+	}, {
+		input:  "create table a (\n\ta float(24) not null default -1\n)",
+		output: "create table a (\n\ta float(24) not null default -1\n)",
+	}, {
+		input:  "create table a (\n\ta float(24,10) not null default -1\n)",
+		output: "create table a (\n\ta float(24,10) not null default -1\n)",
+	}, {
+		input:  "create table a (\n\ta float4 not null default -1\n)",
+		output: "create table a (\n\ta float4 not null default -1\n)",
+	}, {
+		input:  "create table a (\n\ta float8 not null default -1\n)",
+		output: "create table a (\n\ta float8 not null default -1\n)",
 	}, {
 		input:  "create table a (a int not null default 0, primary key(a))",
 		output: "create table a (\n\ta int not null default 0,\n\tprimary key (a)\n)",
@@ -2059,6 +2093,10 @@ var (
 	}, {
 		input: "alter vitess_migration throttle all expire '1h' ratio 0.7",
 	}, {
+		input: "show vitess_throttled_apps",
+	}, {
+		input: "show vitess_throttler status",
+	}, {
 		input: "show warnings",
 	}, {
 		input:  "select warnings from t",
@@ -2109,6 +2147,15 @@ var (
 		input: "explain select * from t",
 	}, {
 		input: "explain format = traditional select * from t",
+	}, {
+		input: "vexplain queries select * from t",
+	}, {
+		input: "vexplain all select * from t",
+	}, {
+		input: "vexplain plan select * from t",
+	}, {
+		input:  "vexplain select * from t",
+		output: "vexplain plan select * from t",
 	}, {
 		input: "explain analyze select * from t",
 	}, {
@@ -2304,6 +2351,14 @@ var (
 	}, {
 		input:  "start transaction",
 		output: "begin",
+	}, {
+		input: "start transaction with consistent snapshot",
+	}, {
+		input: "start transaction read write",
+	}, {
+		input: "start transaction read only",
+	}, {
+		input: "start transaction read only, with consistent snapshot",
 	}, {
 		input: "commit",
 	}, {
@@ -3264,6 +3319,12 @@ var (
 	}, {
 		input:  "select * from (((select 1))) as tbl",
 		output: "select * from (select 1 from dual) as tbl",
+	}, {
+		input:  `select * from t1 where col1 like 'ks\%' and col2 = 'ks\%' and col1 like 'ks%' and col2 = 'ks%'`,
+		output: `select * from t1 where col1 like 'ks\%' and col2 = 'ks\%' and col1 like 'ks%' and col2 = 'ks%'`,
+	}, {
+		input:  `select * from t1 where col1 like 'ks\_' and col2 = 'ks\_' and col1 like 'ks_' and col2 = 'ks_'`,
+		output: `select * from t1 where col1 like 'ks\_' and col2 = 'ks\_' and col1 like 'ks_' and col2 = 'ks_'`,
 	}}
 )
 
@@ -5419,17 +5480,7 @@ var (
 			"(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(" +
 			"F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F" +
 			"(F(F(F(F(F(F(F(F(F(F(F(F(",
-		output: "max nesting level reached at position 406",
-	}, {
-		input: "select(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F" +
-			"(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(" +
-			"F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F" +
-			"(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(" +
-			"F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F" +
-			"(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(" +
-			"F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F(F" +
-			"(F(F(F(F(F(F(F(F(F(F(F(",
-		output: "syntax error at position 404",
+		output: "syntax error at position 406",
 	}, {
 		// This construct is considered invalid due to a grammar conflict.
 		input:  "insert into a select * from b join c on duplicate key update d=e",
@@ -5629,9 +5680,9 @@ partition by range (id)
 
 	for _, testcase := range testcases {
 		t.Run(testcase.input+":"+testcase.mysqlVersion, func(t *testing.T) {
-			oldMySQLVersion := MySQLVersion
-			defer func() { MySQLVersion = oldMySQLVersion }()
-			MySQLVersion = testcase.mysqlVersion
+			oldMySQLVersion := mySQLParserVersion
+			defer func() { mySQLParserVersion = oldMySQLVersion }()
+			mySQLParserVersion = testcase.mysqlVersion
 			tree, err := Parse(testcase.input)
 			require.NoError(t, err, testcase.input)
 			out := String(tree)

@@ -13241,6 +13241,9 @@ export namespace topodata {
 
         /** Keyspace durability_policy */
         durability_policy?: (string|null);
+
+        /** Keyspace throttler_config */
+        throttler_config?: (topodata.IThrottlerConfig|null);
     }
 
     /** Represents a Keyspace. */
@@ -13266,6 +13269,9 @@ export namespace topodata {
 
         /** Keyspace durability_policy. */
         public durability_policy: string;
+
+        /** Keyspace throttler_config. */
+        public throttler_config?: (topodata.IThrottlerConfig|null);
 
         /**
          * Creates a new Keyspace instance using the specified properties.
@@ -13930,6 +13936,114 @@ export namespace topodata {
         public toJSON(): { [k: string]: any };
     }
 
+    /** Properties of a ThrottlerConfig. */
+    interface IThrottlerConfig {
+
+        /** ThrottlerConfig enabled */
+        enabled?: (boolean|null);
+
+        /** ThrottlerConfig threshold */
+        threshold?: (number|null);
+
+        /** ThrottlerConfig custom_query */
+        custom_query?: (string|null);
+
+        /** ThrottlerConfig check_as_check_self */
+        check_as_check_self?: (boolean|null);
+    }
+
+    /** Represents a ThrottlerConfig. */
+    class ThrottlerConfig implements IThrottlerConfig {
+
+        /**
+         * Constructs a new ThrottlerConfig.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: topodata.IThrottlerConfig);
+
+        /** ThrottlerConfig enabled. */
+        public enabled: boolean;
+
+        /** ThrottlerConfig threshold. */
+        public threshold: number;
+
+        /** ThrottlerConfig custom_query. */
+        public custom_query: string;
+
+        /** ThrottlerConfig check_as_check_self. */
+        public check_as_check_self: boolean;
+
+        /**
+         * Creates a new ThrottlerConfig instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns ThrottlerConfig instance
+         */
+        public static create(properties?: topodata.IThrottlerConfig): topodata.ThrottlerConfig;
+
+        /**
+         * Encodes the specified ThrottlerConfig message. Does not implicitly {@link topodata.ThrottlerConfig.verify|verify} messages.
+         * @param message ThrottlerConfig message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: topodata.IThrottlerConfig, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified ThrottlerConfig message, length delimited. Does not implicitly {@link topodata.ThrottlerConfig.verify|verify} messages.
+         * @param message ThrottlerConfig message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: topodata.IThrottlerConfig, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a ThrottlerConfig message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns ThrottlerConfig
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): topodata.ThrottlerConfig;
+
+        /**
+         * Decodes a ThrottlerConfig message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns ThrottlerConfig
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): topodata.ThrottlerConfig;
+
+        /**
+         * Verifies a ThrottlerConfig message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a ThrottlerConfig message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns ThrottlerConfig
+         */
+        public static fromObject(object: { [k: string]: any }): topodata.ThrottlerConfig;
+
+        /**
+         * Creates a plain object from a ThrottlerConfig message. Also converts values to other types if specified.
+         * @param message ThrottlerConfig
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: topodata.ThrottlerConfig, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this ThrottlerConfig to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
     /** Properties of a SrvKeyspace. */
     interface ISrvKeyspace {
 
@@ -13938,6 +14052,9 @@ export namespace topodata {
 
         /** SrvKeyspace served_from */
         served_from?: (topodata.SrvKeyspace.IServedFrom[]|null);
+
+        /** SrvKeyspace throttler_config */
+        throttler_config?: (topodata.IThrottlerConfig|null);
     }
 
     /** Represents a SrvKeyspace. */
@@ -13954,6 +14071,9 @@ export namespace topodata {
 
         /** SrvKeyspace served_from. */
         public served_from: topodata.SrvKeyspace.IServedFrom[];
+
+        /** SrvKeyspace throttler_config. */
+        public throttler_config?: (topodata.IThrottlerConfig|null);
 
         /**
          * Creates a new SrvKeyspace instance using the specified properties.
@@ -23083,6 +23203,9 @@ export namespace tabletmanagerdata {
 
         /** BackupRequest allow_primary */
         allow_primary?: (boolean|null);
+
+        /** BackupRequest incremental_from_pos */
+        incremental_from_pos?: (string|null);
     }
 
     /** Represents a BackupRequest. */
@@ -23099,6 +23222,9 @@ export namespace tabletmanagerdata {
 
         /** BackupRequest allow_primary. */
         public allow_primary: boolean;
+
+        /** BackupRequest incremental_from_pos. */
+        public incremental_from_pos: string;
 
         /**
          * Creates a new BackupRequest instance using the specified properties.
@@ -23266,6 +23392,12 @@ export namespace tabletmanagerdata {
 
         /** RestoreFromBackupRequest backup_time */
         backup_time?: (vttime.ITime|null);
+
+        /** RestoreFromBackupRequest restore_to_pos */
+        restore_to_pos?: (string|null);
+
+        /** RestoreFromBackupRequest dry_run */
+        dry_run?: (boolean|null);
     }
 
     /** Represents a RestoreFromBackupRequest. */
@@ -23279,6 +23411,12 @@ export namespace tabletmanagerdata {
 
         /** RestoreFromBackupRequest backup_time. */
         public backup_time?: (vttime.ITime|null);
+
+        /** RestoreFromBackupRequest restore_to_pos. */
+        public restore_to_pos: string;
+
+        /** RestoreFromBackupRequest dry_run. */
+        public dry_run: boolean;
 
         /**
          * Creates a new RestoreFromBackupRequest instance using the specified properties.
@@ -23960,8 +24098,8 @@ export namespace tabletmanagerdata {
     /** Properties of a VDiffReportOptions. */
     interface IVDiffReportOptions {
 
-        /** VDiffReportOptions only_p_k_s */
-        only_p_k_s?: (boolean|null);
+        /** VDiffReportOptions only_pks */
+        only_pks?: (boolean|null);
 
         /** VDiffReportOptions debug_query */
         debug_query?: (boolean|null);
@@ -23979,8 +24117,8 @@ export namespace tabletmanagerdata {
          */
         constructor(properties?: tabletmanagerdata.IVDiffReportOptions);
 
-        /** VDiffReportOptions only_p_k_s. */
-        public only_p_k_s: boolean;
+        /** VDiffReportOptions only_pks. */
+        public only_pks: boolean;
 
         /** VDiffReportOptions debug_query. */
         public debug_query: boolean;
@@ -24991,6 +25129,12 @@ export namespace query {
 
         /** ExecuteOptions has_created_temp_tables */
         has_created_temp_tables?: (boolean|null);
+
+        /** ExecuteOptions consolidator */
+        consolidator?: (query.ExecuteOptions.Consolidator|null);
+
+        /** ExecuteOptions transaction_access_mode */
+        transaction_access_mode?: (query.ExecuteOptions.TransactionAccessMode[]|null);
     }
 
     /** Represents an ExecuteOptions. */
@@ -25025,6 +25169,12 @@ export namespace query {
 
         /** ExecuteOptions has_created_temp_tables. */
         public has_created_temp_tables: boolean;
+
+        /** ExecuteOptions consolidator. */
+        public consolidator: query.ExecuteOptions.Consolidator;
+
+        /** ExecuteOptions transaction_access_mode. */
+        public transaction_access_mode: query.ExecuteOptions.TransactionAccessMode[];
 
         /**
          * Creates a new ExecuteOptions instance using the specified properties.
@@ -25134,6 +25284,21 @@ export namespace query {
             Gen4Left2Right = 4,
             Gen4WithFallback = 5,
             Gen4CompareV3 = 6
+        }
+
+        /** Consolidator enum. */
+        enum Consolidator {
+            CONSOLIDATOR_UNSPECIFIED = 0,
+            CONSOLIDATOR_DISABLED = 1,
+            CONSOLIDATOR_ENABLED = 2,
+            CONSOLIDATOR_ENABLED_REPLICAS = 3
+        }
+
+        /** TransactionAccessMode enum. */
+        enum TransactionAccessMode {
+            CONSISTENT_SNAPSHOT = 0,
+            READ_WRITE = 1,
+            READ_ONLY = 2
         }
     }
 
@@ -30675,6 +30840,9 @@ export namespace query {
 
         /** RealtimeStats table_schema_changed */
         table_schema_changed?: (string[]|null);
+
+        /** RealtimeStats view_schema_changed */
+        view_schema_changed?: (string[]|null);
     }
 
     /** Represents a RealtimeStats. */
@@ -30706,6 +30874,9 @@ export namespace query {
 
         /** RealtimeStats table_schema_changed. */
         public table_schema_changed: string[];
+
+        /** RealtimeStats view_schema_changed. */
+        public view_schema_changed: string[];
 
         /**
          * Creates a new RealtimeStats instance using the specified properties.
@@ -31111,6 +31282,205 @@ export namespace query {
 
         /**
          * Converts this TransactionMetadata to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
+    /** SchemaTableType enum. */
+    enum SchemaTableType {
+        VIEWS = 0,
+        TABLES = 1,
+        ALL = 2
+    }
+
+    /** Properties of a GetSchemaRequest. */
+    interface IGetSchemaRequest {
+
+        /** GetSchemaRequest target */
+        target?: (query.ITarget|null);
+
+        /** GetSchemaRequest table_type */
+        table_type?: (query.SchemaTableType|null);
+
+        /** GetSchemaRequest table_names */
+        table_names?: (string[]|null);
+    }
+
+    /** Represents a GetSchemaRequest. */
+    class GetSchemaRequest implements IGetSchemaRequest {
+
+        /**
+         * Constructs a new GetSchemaRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: query.IGetSchemaRequest);
+
+        /** GetSchemaRequest target. */
+        public target?: (query.ITarget|null);
+
+        /** GetSchemaRequest table_type. */
+        public table_type: query.SchemaTableType;
+
+        /** GetSchemaRequest table_names. */
+        public table_names: string[];
+
+        /**
+         * Creates a new GetSchemaRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns GetSchemaRequest instance
+         */
+        public static create(properties?: query.IGetSchemaRequest): query.GetSchemaRequest;
+
+        /**
+         * Encodes the specified GetSchemaRequest message. Does not implicitly {@link query.GetSchemaRequest.verify|verify} messages.
+         * @param message GetSchemaRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: query.IGetSchemaRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified GetSchemaRequest message, length delimited. Does not implicitly {@link query.GetSchemaRequest.verify|verify} messages.
+         * @param message GetSchemaRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: query.IGetSchemaRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a GetSchemaRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns GetSchemaRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): query.GetSchemaRequest;
+
+        /**
+         * Decodes a GetSchemaRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns GetSchemaRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): query.GetSchemaRequest;
+
+        /**
+         * Verifies a GetSchemaRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a GetSchemaRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns GetSchemaRequest
+         */
+        public static fromObject(object: { [k: string]: any }): query.GetSchemaRequest;
+
+        /**
+         * Creates a plain object from a GetSchemaRequest message. Also converts values to other types if specified.
+         * @param message GetSchemaRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: query.GetSchemaRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this GetSchemaRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
+    /** Properties of a GetSchemaResponse. */
+    interface IGetSchemaResponse {
+
+        /** GetSchemaResponse table_definition */
+        table_definition?: ({ [k: string]: string }|null);
+    }
+
+    /** Represents a GetSchemaResponse. */
+    class GetSchemaResponse implements IGetSchemaResponse {
+
+        /**
+         * Constructs a new GetSchemaResponse.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: query.IGetSchemaResponse);
+
+        /** GetSchemaResponse table_definition. */
+        public table_definition: { [k: string]: string };
+
+        /**
+         * Creates a new GetSchemaResponse instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns GetSchemaResponse instance
+         */
+        public static create(properties?: query.IGetSchemaResponse): query.GetSchemaResponse;
+
+        /**
+         * Encodes the specified GetSchemaResponse message. Does not implicitly {@link query.GetSchemaResponse.verify|verify} messages.
+         * @param message GetSchemaResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: query.IGetSchemaResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified GetSchemaResponse message, length delimited. Does not implicitly {@link query.GetSchemaResponse.verify|verify} messages.
+         * @param message GetSchemaResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: query.IGetSchemaResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a GetSchemaResponse message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns GetSchemaResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): query.GetSchemaResponse;
+
+        /**
+         * Decodes a GetSchemaResponse message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns GetSchemaResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): query.GetSchemaResponse;
+
+        /**
+         * Verifies a GetSchemaResponse message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a GetSchemaResponse message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns GetSchemaResponse
+         */
+        public static fromObject(object: { [k: string]: any }): query.GetSchemaResponse;
+
+        /**
+         * Creates a plain object from a GetSchemaResponse message. Also converts values to other types if specified.
+         * @param message GetSchemaResponse
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: query.GetSchemaResponse, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this GetSchemaResponse to JSON.
          * @returns JSON object
          */
         public toJSON(): { [k: string]: any };
@@ -32389,6 +32759,9 @@ export namespace vschema {
 
         /** Table column_list_authoritative */
         column_list_authoritative?: (boolean|null);
+
+        /** Table source */
+        source?: (string|null);
     }
 
     /** Represents a Table. */
@@ -32417,6 +32790,9 @@ export namespace vschema {
 
         /** Table column_list_authoritative. */
         public column_list_authoritative: boolean;
+
+        /** Table source. */
+        public source: string;
 
         /**
          * Creates a new Table instance using the specified properties.
@@ -33414,6 +33790,12 @@ export namespace vtctldata {
 
         /** MaterializeSettings source_shards */
         source_shards?: (string[]|null);
+
+        /** MaterializeSettings on_ddl */
+        on_ddl?: (string|null);
+
+        /** MaterializeSettings defer_secondary_keys */
+        defer_secondary_keys?: (boolean|null);
     }
 
     /** Represents a MaterializeSettings. */
@@ -33460,6 +33842,12 @@ export namespace vtctldata {
 
         /** MaterializeSettings source_shards. */
         public source_shards: string[];
+
+        /** MaterializeSettings on_ddl. */
+        public on_ddl: string;
+
+        /** MaterializeSettings defer_secondary_keys. */
+        public defer_secondary_keys: boolean;
 
         /**
          * Creates a new MaterializeSettings instance using the specified properties.
@@ -33747,6 +34135,12 @@ export namespace vtctldata {
 
         /** Workflow shard_streams */
         shard_streams?: ({ [k: string]: vtctldata.Workflow.IShardStream }|null);
+
+        /** Workflow workflow_type */
+        workflow_type?: (string|null);
+
+        /** Workflow workflow_sub_type */
+        workflow_sub_type?: (string|null);
     }
 
     /** Represents a Workflow. */
@@ -33772,6 +34166,12 @@ export namespace vtctldata {
 
         /** Workflow shard_streams. */
         public shard_streams: { [k: string]: vtctldata.Workflow.IShardStream };
+
+        /** Workflow workflow_type. */
+        public workflow_type: string;
+
+        /** Workflow workflow_sub_type. */
+        public workflow_sub_type: string;
 
         /**
          * Creates a new Workflow instance using the specified properties.
@@ -35631,6 +36031,9 @@ export namespace vtctldata {
 
         /** BackupRequest concurrency */
         concurrency?: (number|Long|null);
+
+        /** BackupRequest incremental_from_pos */
+        incremental_from_pos?: (string|null);
     }
 
     /** Represents a BackupRequest. */
@@ -35650,6 +36053,9 @@ export namespace vtctldata {
 
         /** BackupRequest concurrency. */
         public concurrency: (number|Long);
+
+        /** BackupRequest incremental_from_pos. */
+        public incremental_from_pos: string;
 
         /**
          * Creates a new BackupRequest instance using the specified properties.
@@ -41311,6 +41717,222 @@ export namespace vtctldata {
         public toJSON(): { [k: string]: any };
     }
 
+    /** Properties of an UpdateThrottlerConfigRequest. */
+    interface IUpdateThrottlerConfigRequest {
+
+        /** UpdateThrottlerConfigRequest keyspace */
+        keyspace?: (string|null);
+
+        /** UpdateThrottlerConfigRequest enable */
+        enable?: (boolean|null);
+
+        /** UpdateThrottlerConfigRequest disable */
+        disable?: (boolean|null);
+
+        /** UpdateThrottlerConfigRequest threshold */
+        threshold?: (number|null);
+
+        /** UpdateThrottlerConfigRequest custom_query */
+        custom_query?: (string|null);
+
+        /** UpdateThrottlerConfigRequest custom_query_set */
+        custom_query_set?: (boolean|null);
+
+        /** UpdateThrottlerConfigRequest check_as_check_self */
+        check_as_check_self?: (boolean|null);
+
+        /** UpdateThrottlerConfigRequest check_as_check_shard */
+        check_as_check_shard?: (boolean|null);
+    }
+
+    /** Represents an UpdateThrottlerConfigRequest. */
+    class UpdateThrottlerConfigRequest implements IUpdateThrottlerConfigRequest {
+
+        /**
+         * Constructs a new UpdateThrottlerConfigRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: vtctldata.IUpdateThrottlerConfigRequest);
+
+        /** UpdateThrottlerConfigRequest keyspace. */
+        public keyspace: string;
+
+        /** UpdateThrottlerConfigRequest enable. */
+        public enable: boolean;
+
+        /** UpdateThrottlerConfigRequest disable. */
+        public disable: boolean;
+
+        /** UpdateThrottlerConfigRequest threshold. */
+        public threshold: number;
+
+        /** UpdateThrottlerConfigRequest custom_query. */
+        public custom_query: string;
+
+        /** UpdateThrottlerConfigRequest custom_query_set. */
+        public custom_query_set: boolean;
+
+        /** UpdateThrottlerConfigRequest check_as_check_self. */
+        public check_as_check_self: boolean;
+
+        /** UpdateThrottlerConfigRequest check_as_check_shard. */
+        public check_as_check_shard: boolean;
+
+        /**
+         * Creates a new UpdateThrottlerConfigRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns UpdateThrottlerConfigRequest instance
+         */
+        public static create(properties?: vtctldata.IUpdateThrottlerConfigRequest): vtctldata.UpdateThrottlerConfigRequest;
+
+        /**
+         * Encodes the specified UpdateThrottlerConfigRequest message. Does not implicitly {@link vtctldata.UpdateThrottlerConfigRequest.verify|verify} messages.
+         * @param message UpdateThrottlerConfigRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: vtctldata.IUpdateThrottlerConfigRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified UpdateThrottlerConfigRequest message, length delimited. Does not implicitly {@link vtctldata.UpdateThrottlerConfigRequest.verify|verify} messages.
+         * @param message UpdateThrottlerConfigRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: vtctldata.IUpdateThrottlerConfigRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes an UpdateThrottlerConfigRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns UpdateThrottlerConfigRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): vtctldata.UpdateThrottlerConfigRequest;
+
+        /**
+         * Decodes an UpdateThrottlerConfigRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns UpdateThrottlerConfigRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): vtctldata.UpdateThrottlerConfigRequest;
+
+        /**
+         * Verifies an UpdateThrottlerConfigRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates an UpdateThrottlerConfigRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns UpdateThrottlerConfigRequest
+         */
+        public static fromObject(object: { [k: string]: any }): vtctldata.UpdateThrottlerConfigRequest;
+
+        /**
+         * Creates a plain object from an UpdateThrottlerConfigRequest message. Also converts values to other types if specified.
+         * @param message UpdateThrottlerConfigRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: vtctldata.UpdateThrottlerConfigRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this UpdateThrottlerConfigRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
+    /** Properties of an UpdateThrottlerConfigResponse. */
+    interface IUpdateThrottlerConfigResponse {
+    }
+
+    /** Represents an UpdateThrottlerConfigResponse. */
+    class UpdateThrottlerConfigResponse implements IUpdateThrottlerConfigResponse {
+
+        /**
+         * Constructs a new UpdateThrottlerConfigResponse.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: vtctldata.IUpdateThrottlerConfigResponse);
+
+        /**
+         * Creates a new UpdateThrottlerConfigResponse instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns UpdateThrottlerConfigResponse instance
+         */
+        public static create(properties?: vtctldata.IUpdateThrottlerConfigResponse): vtctldata.UpdateThrottlerConfigResponse;
+
+        /**
+         * Encodes the specified UpdateThrottlerConfigResponse message. Does not implicitly {@link vtctldata.UpdateThrottlerConfigResponse.verify|verify} messages.
+         * @param message UpdateThrottlerConfigResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: vtctldata.IUpdateThrottlerConfigResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified UpdateThrottlerConfigResponse message, length delimited. Does not implicitly {@link vtctldata.UpdateThrottlerConfigResponse.verify|verify} messages.
+         * @param message UpdateThrottlerConfigResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: vtctldata.IUpdateThrottlerConfigResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes an UpdateThrottlerConfigResponse message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns UpdateThrottlerConfigResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): vtctldata.UpdateThrottlerConfigResponse;
+
+        /**
+         * Decodes an UpdateThrottlerConfigResponse message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns UpdateThrottlerConfigResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): vtctldata.UpdateThrottlerConfigResponse;
+
+        /**
+         * Verifies an UpdateThrottlerConfigResponse message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates an UpdateThrottlerConfigResponse message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns UpdateThrottlerConfigResponse
+         */
+        public static fromObject(object: { [k: string]: any }): vtctldata.UpdateThrottlerConfigResponse;
+
+        /**
+         * Creates a plain object from an UpdateThrottlerConfigResponse message. Also converts values to other types if specified.
+         * @param message UpdateThrottlerConfigResponse
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: vtctldata.UpdateThrottlerConfigResponse, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this UpdateThrottlerConfigResponse to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+    }
+
     /** Properties of a GetSrvVSchemaRequest. */
     interface IGetSrvVSchemaRequest {
 
@@ -45579,6 +46201,12 @@ export namespace vtctldata {
 
         /** RestoreFromBackupRequest backup_time */
         backup_time?: (vttime.ITime|null);
+
+        /** RestoreFromBackupRequest restore_to_pos */
+        restore_to_pos?: (string|null);
+
+        /** RestoreFromBackupRequest dry_run */
+        dry_run?: (boolean|null);
     }
 
     /** Represents a RestoreFromBackupRequest. */
@@ -45595,6 +46223,12 @@ export namespace vtctldata {
 
         /** RestoreFromBackupRequest backup_time. */
         public backup_time?: (vttime.ITime|null);
+
+        /** RestoreFromBackupRequest restore_to_pos. */
+        public restore_to_pos: string;
+
+        /** RestoreFromBackupRequest dry_run. */
+        public dry_run: boolean;
 
         /**
          * Creates a new RestoreFromBackupRequest instance using the specified properties.
@@ -51570,6 +52204,9 @@ export namespace binlogdata {
 
         /** Rule source_unique_key_target_columns */
         source_unique_key_target_columns?: (string|null);
+
+        /** Rule convert_int_to_enum */
+        convert_int_to_enum?: ({ [k: string]: boolean }|null);
     }
 
     /** Represents a Rule. */
@@ -51601,6 +52238,9 @@ export namespace binlogdata {
 
         /** Rule source_unique_key_target_columns. */
         public source_unique_key_target_columns: string;
+
+        /** Rule convert_int_to_enum. */
+        public convert_int_to_enum: { [k: string]: boolean };
 
         /**
          * Creates a new Rule instance using the specified properties.
@@ -51991,7 +52631,8 @@ export namespace binlogdata {
         JOURNAL = 16,
         VERSION = 17,
         LASTPK = 18,
-        SAVEPOINT = 19
+        SAVEPOINT = 19,
+        COPY_COMPLETED = 20
     }
 
     /** Properties of a RowChange. */

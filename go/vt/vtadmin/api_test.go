@@ -34,7 +34,6 @@ import (
 
 	_flag "vitess.io/vitess/go/internal/flag"
 	"vitess.io/vitess/go/test/utils"
-	"vitess.io/vitess/go/vt/grpccommon"
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/topo/memorytopo"
 	"vitess.io/vitess/go/vt/topo/topoproto"
@@ -567,7 +566,7 @@ func TestFindSchema(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, resp)
+			assert.Truef(t, proto.Equal(tt.expected, resp), "expected %v, got %v", tt.expected, resp)
 		})
 	}
 
@@ -815,7 +814,7 @@ func TestFindSchema(t *testing.T) {
 		}
 
 		assert.NoError(t, err)
-		assert.Equal(t, expected, schema)
+		assert.Truef(t, proto.Equal(expected, schema), "expected %v, got %v", expected, schema)
 	})
 }
 
@@ -1091,7 +1090,7 @@ func TestGetKeyspace(t *testing.T) {
 				}
 
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, ks)
+				assert.Truef(t, proto.Equal(tt.expected, ks), "expected %v, got %v", tt.expected, ks)
 			}, vtctlds...)
 		})
 	}
@@ -1110,14 +1109,14 @@ func TestGetKeyspaces(t *testing.T) {
 		{
 			name: "multiple clusters, multiple shards",
 			clusterKeyspaces: [][]*vtctldatapb.Keyspace{
-				//cluster0
+				// cluster0
 				{
 					{
 						Name:     "c0-ks0",
 						Keyspace: &topodatapb.Keyspace{},
 					},
 				},
-				//cluster1
+				// cluster1
 				{
 					{
 						Name:     "c1-ks0",
@@ -1126,7 +1125,7 @@ func TestGetKeyspaces(t *testing.T) {
 				},
 			},
 			clusterShards: [][]*vtctldatapb.Shard{
-				//cluster0
+				// cluster0
 				{
 					{
 						Keyspace: "c0-ks0",
@@ -1137,7 +1136,7 @@ func TestGetKeyspaces(t *testing.T) {
 						Name:     "80-",
 					},
 				},
-				//cluster1
+				// cluster1
 				{
 					{
 						Keyspace: "c1-ks0",
@@ -1248,14 +1247,14 @@ func TestGetKeyspaces(t *testing.T) {
 		{
 			name: "filtered by cluster ID",
 			clusterKeyspaces: [][]*vtctldatapb.Keyspace{
-				//cluster0
+				// cluster0
 				{
 					{
 						Name:     "c0-ks0",
 						Keyspace: &topodatapb.Keyspace{},
 					},
 				},
-				//cluster1
+				// cluster1
 				{
 					{
 						Name:     "c1-ks0",
@@ -1575,7 +1574,7 @@ func TestGetSchema(t *testing.T) {
 				}
 
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, resp)
+				assert.Truef(t, proto.Equal(tt.expected, resp), "expected %v, got %v", tt.expected, resp)
 			})
 		})
 	}
@@ -1742,7 +1741,7 @@ func TestGetSchema(t *testing.T) {
 		}
 
 		assert.NoError(t, err)
-		assert.Equal(t, expected, schema)
+		assert.Truef(t, proto.Equal(expected, schema), "expected %v, got %v", expected, schema)
 	})
 }
 
@@ -2556,7 +2555,7 @@ func TestGetSchemas(t *testing.T) {
 		}
 
 		assert.NoError(t, err)
-		assert.ElementsMatch(t, expected.Schemas, resp.Schemas)
+		assert.Truef(t, proto.Equal(expected, resp), "expected: %v, got: %v", expected, resp)
 	})
 }
 
@@ -2717,7 +2716,7 @@ func TestGetSrvVSchema(t *testing.T) {
 				}
 
 				require.NoError(t, err)
-				assert.Equal(t, tt.expected, resp)
+				assert.Truef(t, proto.Equal(tt.expected, resp), "expected %v, got %v", tt.expected, resp)
 			})
 		})
 	}
@@ -3609,7 +3608,7 @@ func TestGetVSchema(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, resp)
+			assert.Truef(t, proto.Equal(tt.expected, resp), "expected %v, got %v", tt.expected, resp)
 		})
 	}
 }
@@ -4155,7 +4154,7 @@ func TestGetWorkflow(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, resp)
+			assert.Truef(t, proto.Equal(tt.expected, resp), "expected %v, got %v", tt.expected, resp)
 		})
 	}
 }
@@ -5143,17 +5142,6 @@ func init() {
 	tmclient.RegisterTabletManagerClientFactory("vtadmin.test", func() tmclient.TabletManagerClient {
 		return nil
 	})
-
-	// This prevents data-race failures in tests involving grpc client or server
-	// creation. For example, vtctldclient.New() eventually ends up calling
-	// grpccommon.EnableTracingOpt() which does a synchronized, one-time
-	// mutation of the global grpc.EnableTracing. This variable is also read,
-	// unguarded, by grpc.NewServer(), which is a function call that appears in
-	// most, if not all, vtadmin.API tests.
-	//
-	// Calling this here ensures that one-time write happens before any test
-	// attempts to read that value by way of grpc.NewServer().
-	grpccommon.EnableTracingOpt()
 }
 
 //go:generate -command authztestgen go run ./testutil/authztestgen

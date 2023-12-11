@@ -155,7 +155,6 @@ func (tm *TabletManager) convertBoolToSemiSyncAction(semiSync bool) (SemiSyncAct
 		return SemiSyncActionNone, err
 	}
 
-	//revive:disable:indent-error-flow
 	if semiSyncExtensionLoaded {
 		if semiSync {
 			return SemiSyncActionSet, nil
@@ -164,10 +163,9 @@ func (tm *TabletManager) convertBoolToSemiSyncAction(semiSync bool) (SemiSyncAct
 		}
 	} else {
 		if semiSync {
-			return SemiSyncActionNone, errors.New("semi-sync plugins are not loaded")
+			return SemiSyncActionNone, vterrors.VT09013()
 		} else {
 			return SemiSyncActionNone, nil
 		}
 	}
-	//revive:enable:indent-error-flow
 }

@@ -34,8 +34,13 @@ import (
 	querypb "vitess.io/vitess/go/vt/proto/query"
 )
 
-// Walk calls visit on every node.
-// If visit returns true, the underlying nodes
+// Generate all the AST helpers using the tooling in `go/tools`
+
+//go:generate go run ../../tools/asthelpergen/main  --in . --iface vitess.io/vitess/go/vt/sqlparser.SQLNode --clone_exclude "*ColName" --equals_custom "*ColName"
+//go:generate go run ../../tools/astfmtgen vitess.io/vitess/go/vt/sqlparser/...
+
+// Walk calls postVisit on every node.
+// If postVisit returns true, the underlying nodes
 // are also visited. If it returns an error, walking
 // is interrupted, and the error is returned.
 func Walk(visit Visit, nodes ...SQLNode) error {
@@ -49,7 +54,7 @@ func Walk(visit Visit, nodes ...SQLNode) error {
 }
 
 // Visit defines the signature of a function that
-// can be used to visit all nodes of a parse tree.
+// can be used to postVisit all nodes of a parse tree.
 // returning false on kontinue means that children will not be visited
 // returning an error will abort the visitation and return the error
 type Visit func(node SQLNode) (kontinue bool, err error)
@@ -101,13 +106,13 @@ type TableOption struct {
 type ColumnKeyOption int
 
 const (
-	colKeyNone ColumnKeyOption = iota
-	colKeyPrimary
-	colKeySpatialKey
-	colKeyFulltextKey
-	colKeyUnique
-	colKeyUniqueKey
-	colKey
+	ColKeyNone ColumnKeyOption = iota
+	ColKeyPrimary
+	ColKeySpatialKey
+	ColKeyFulltextKey
+	ColKeyUnique
+	ColKeyUniqueKey
+	ColKey
 )
 
 // ReferenceAction indicates the action takes by a referential constraint e.g.
@@ -276,9 +281,9 @@ func SQLTypeToQueryType(typeName string, unsigned bool) querypb.Type {
 		return sqltypes.Timestamp
 	case YEAR:
 		return sqltypes.Year
-	case FLOAT_TYPE:
+	case FLOAT_TYPE, FLOAT4_TYPE:
 		return sqltypes.Float32
-	case DOUBLE:
+	case DOUBLE, FLOAT8_TYPE:
 		return sqltypes.Float64
 	case DECIMAL, DECIMAL_TYPE:
 		return sqltypes.Decimal
@@ -438,7 +443,7 @@ func NewWhere(typ WhereType, expr Expr) *Where {
 // and replaces it with to. If from matches root,
 // then to is returned.
 func ReplaceExpr(root, from, to Expr) Expr {
-	tmp := Rewrite(root, replaceExpr(from, to), nil)
+	tmp := SafeRewrite(root, stopWalking, replaceExpr(from, to))
 
 	expr, success := tmp.(Expr)
 	if !success {
@@ -449,16 +454,20 @@ func ReplaceExpr(root, from, to Expr) Expr {
 	return expr
 }
 
+func stopWalking(e SQLNode, _ SQLNode) bool {
+	switch e.(type) {
+	case *ExistsExpr, *Literal, *Subquery, *ValuesFuncExpr, *Default:
+		return false
+	default:
+		return true
+	}
+}
+
 func replaceExpr(from, to Expr) func(cursor *Cursor) bool {
 	return func(cursor *Cursor) bool {
 		if cursor.Node() == from {
 			cursor.Replace(to)
 		}
-		switch cursor.Node().(type) {
-		case *ExistsExpr, *Literal, *Subquery, *ValuesFuncExpr, *Default:
-			return false
-		}
-
 		return true
 	}
 }
@@ -691,6 +700,14 @@ func NewSelect(comments Comments, exprs SelectExprs, selectOptions []string, int
 	}
 }
 
+// UpdateSetExprsScope updates the scope of the variables in SetExprs.
+func UpdateSetExprsScope(setExprs SetExprs, scope Scope) SetExprs {
+	for _, setExpr := range setExprs {
+		setExpr.Var.Scope = scope
+	}
+	return setExprs
+}
+
 // NewSetVariable returns a variable that can be used with SET.
 func NewSetVariable(str string, scope Scope) *Variable {
 	return &Variable{Name: createIdentifierCI(str), Scope: scope}
@@ -724,6 +741,8 @@ func NewVariableExpression(str string, at AtCount) *Variable {
 		case strings.HasPrefix(l, "vitess_metadata."):
 			v.Name = createIdentifierCI(str[16:])
 			v.Scope = VitessMetadataScope
+		case strings.HasSuffix(l, TransactionIsolationStr) || strings.HasSuffix(l, TransactionReadOnlyStr):
+			v.Scope = NextTxScope
 		default:
 			v.Scope = SessionScope
 		}
@@ -970,35 +989,20 @@ func (node *Select) GetParsedComments() *ParsedComments {
 // AddWhere adds the boolean expression to the
 // WHERE clause as an AND condition.
 func (node *Select) AddWhere(expr Expr) {
-	if node.Where == nil {
-		node.Where = &Where{
-			Type: WhereClause,
-			Expr: expr,
-		}
-		return
-	}
-	exprs := SplitAndExpression(nil, node.Where.Expr)
-	node.Where.Expr = AndExpressions(append(exprs, expr)...)
+	node.Where = addPredicate(node.Where, expr)
 }
 
 // AddHaving adds the boolean expression to the
 // HAVING clause as an AND condition.
 func (node *Select) AddHaving(expr Expr) {
-	if node.Having == nil {
-		node.Having = &Where{
-			Type: HavingClause,
-			Expr: expr,
-		}
-		return
-	}
-	exprs := SplitAndExpression(nil, node.Having.Expr)
-	node.Having.Expr = AndExpressions(append(exprs, expr)...)
+	node.Having = addPredicate(node.Having, expr)
+	node.Having.Type = HavingClause
 }
 
 // AddGroupBy adds a grouping expression, unless it's already present
 func (node *Select) AddGroupBy(expr Expr) {
 	for _, gb := range node.GroupBy {
-		if EqualsExpr(gb, expr) {
+		if Equals.Expr(gb, expr) {
 			// group by columns are sets - duplicates don't add anything, so we can just skip these
 			return
 		}
@@ -1009,17 +1013,21 @@ func (node *Select) AddGroupBy(expr Expr) {
 // AddWhere adds the boolean expression to the
 // WHERE clause as an AND condition.
 func (node *Update) AddWhere(expr Expr) {
-	if node.Where == nil {
-		node.Where = &Where{
+	node.Where = addPredicate(node.Where, expr)
+}
+
+func addPredicate(where *Where, pred Expr) *Where {
+	if where == nil {
+		return &Where{
 			Type: WhereClause,
-			Expr: expr,
+			Expr: pred,
 		}
-		return
 	}
-	node.Where.Expr = &AndExpr{
-		Left:  node.Where.Expr,
-		Right: expr,
+	where.Expr = &AndExpr{
+		Left:  where.Expr,
+		Right: pred,
 	}
+	return where
 }
 
 // AddOrder adds an order by element
@@ -1147,7 +1155,7 @@ func (scope Scope) ToString() string {
 		return VitessMetadataStr
 	case VariableScope:
 		return VariableStr
-	case NoScope:
+	case NoScope, NextTxScope:
 		return ""
 	default:
 		return "Unknown Scope"
@@ -1663,6 +1671,20 @@ func (ty ExplainType) ToString() string {
 }
 
 // ToString returns the type as a string
+func (ty VExplainType) ToString() string {
+	switch ty {
+	case PlanVExplainType:
+		return PlanStr
+	case QueriesVExplainType:
+		return QueriesStr
+	case AllVExplainType:
+		return AllVExplainStr
+	default:
+		return "Unknown VExplainType"
+	}
+}
+
+// ToString returns the type as a string
 func (ty IntervalTypes) ToString() string {
 	switch ty {
 	case IntervalYear:
@@ -1804,7 +1826,7 @@ func (ty ShowCommandType) ToString() string {
 	case StatusSession:
 		return StatusSessionStr
 	case Table:
-		return TableStr
+		return TablesStr
 	case TableStatus:
 		return TableStatusStr
 	case Trigger:
@@ -1884,6 +1906,20 @@ func (columnFormat ColumnFormat) ToString() string {
 		return keywordStrings[DEFAULT]
 	default:
 		return "Unknown column format type"
+	}
+}
+
+// ToString returns the TxAccessMode type as a string
+func (ty TxAccessMode) ToString() string {
+	switch ty {
+	case WithConsistentSnapshot:
+		return WithConsistentSnapshotStr
+	case ReadWrite:
+		return ReadWriteStr
+	case ReadOnly:
+		return ReadOnlyStr
+	default:
+		return "Unknown Transaction Access Mode"
 	}
 }
 
@@ -2100,24 +2136,74 @@ func defaultRequiresParens(ct *ColumnType) bool {
 }
 
 // RemoveKeyspaceFromColName removes the Qualifier.Qualifier on all ColNames in the expression tree
-func RemoveKeyspaceFromColName(expr Expr) Expr {
-	return RemoveKeyspace(expr).(Expr) // This hard cast is safe because we do not change the type the input
+func RemoveKeyspaceFromColName(expr Expr) {
+	RemoveKeyspace(expr)
 }
 
 // RemoveKeyspace removes the Qualifier.Qualifier on all ColNames in the AST
-func RemoveKeyspace(in SQLNode) SQLNode {
-	return Rewrite(in, nil, func(cursor *Cursor) bool {
-		switch col := cursor.Node().(type) {
+func RemoveKeyspace(in SQLNode) {
+	// Walk will only return an error if we return an error from the inner func. safe to ignore here
+	_ = Walk(func(node SQLNode) (kontinue bool, err error) {
+		switch col := node.(type) {
 		case *ColName:
 			if !col.Qualifier.Qualifier.IsEmpty() {
 				col.Qualifier.Qualifier = NewIdentifierCS("")
 			}
 		}
-		return true
-	})
+		return true, nil
+	}, in)
 }
 
 func convertStringToInt(integer string) int {
 	val, _ := strconv.Atoi(integer)
 	return val
 }
+
+// SplitAndExpression breaks up the Expr into AND-separated conditions
+// and appends them to filters. Outer parenthesis are removed. Precedence
+// should be taken into account if expressions are recombined.
+func SplitAndExpression(filters []Expr, node Expr) []Expr {
+	if node == nil {
+		return filters
+	}
+	switch node := node.(type) {
+	case *AndExpr:
+		filters = SplitAndExpression(filters, node.Left)
+		return SplitAndExpression(filters, node.Right)
+	}
+	return append(filters, node)
+}
+
+// AndExpressions ands together two or more expressions, minimising the expr when possible
+func AndExpressions(exprs ...Expr) Expr {
+	switch len(exprs) {
+	case 0:
+		return nil
+	case 1:
+		return exprs[0]
+	default:
+		result := (Expr)(nil)
+	outer:
+		// we'll loop and remove any duplicates
+		for i, expr := range exprs {
+			if expr == nil {
+				continue
+			}
+			if result == nil {
+				result = expr
+				continue outer
+			}
+
+			for j := 0; j < i; j++ {
+				if Equals.Expr(expr, exprs[j]) {
+					continue outer
+				}
+			}
+			result = &AndExpr{Left: result, Right: expr}
+		}
+		return result
+	}
+}
+
+// Equals is the default Comparator for AST expressions.
+var Equals = &Comparator{}

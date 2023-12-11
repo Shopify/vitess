@@ -396,6 +396,51 @@ func (ts *Server) DeleteSrvKeyspacePartitions(ctx context.Context, keyspace stri
 	return nil
 }
 
+// UpdateSrvKeyspaceThrottlerConfig updates existing throttler configuration
+func (ts *Server) UpdateSrvKeyspaceThrottlerConfig(ctx context.Context, keyspace string, cells []string, update func(throttlerConfig *topodatapb.ThrottlerConfig) *topodatapb.ThrottlerConfig) (updatedCells []string, err error) {
+	if err = CheckKeyspaceLocked(ctx, keyspace); err != nil {
+		return updatedCells, err
+	}
+
+	// The caller intends to update all cells in this case
+	if len(cells) == 0 {
+		cells, err = ts.GetCellInfoNames(ctx)
+		if err != nil {
+			return updatedCells, err
+		}
+	}
+
+	wg := sync.WaitGroup{}
+	rec := concurrency.AllErrorRecorder{}
+	for _, cell := range cells {
+		wg.Add(1)
+		go func(cell string) {
+			defer wg.Done()
+			srvKeyspace, err := ts.GetSrvKeyspace(ctx, cell, keyspace)
+			switch {
+			case err == nil:
+				srvKeyspace.ThrottlerConfig = update(srvKeyspace.ThrottlerConfig)
+				if err := ts.UpdateSrvKeyspace(ctx, cell, keyspace, srvKeyspace); err != nil {
+					rec.RecordError(err)
+					return
+				}
+				updatedCells = append(updatedCells, cell)
+				return
+			case IsErrType(err, NoNode):
+				// NOOP as not every cell will contain a serving tablet in the keyspace
+			default:
+				rec.RecordError(err)
+				return
+			}
+		}(cell)
+	}
+	wg.Wait()
+	if rec.HasErrors() {
+		return updatedCells, NewError(PartialResult, rec.Error().Error())
+	}
+	return updatedCells, nil
+}
+
 // UpdateDisableQueryService will make sure the disableQueryService is
 // set appropriately in tablet controls in srvKeyspace.
 func (ts *Server) UpdateDisableQueryService(ctx context.Context, keyspace string, shards []*ShardInfo, tabletType topodatapb.TabletType, cells []string, disableQueryService bool) (err error) {

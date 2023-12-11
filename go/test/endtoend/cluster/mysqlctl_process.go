@@ -30,6 +30,7 @@ import (
 
 	"vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/vt/log"
+	"vitess.io/vitess/go/vt/mysqlctl"
 	"vitess.io/vitess/go/vt/tlstest"
 )
 
@@ -104,13 +105,22 @@ func (mysqlctl *MysqlctlProcess) startProcess(init bool) (*exec.Cmd, error) {
 		if mysqlctl.SecureTransport {
 			// Set up EXTRA_MY_CNF for ssl
 			sslPath := path.Join(os.Getenv("VTDATAROOT"), fmt.Sprintf("/ssl_%010d", mysqlctl.TabletUID))
+			os.MkdirAll(sslPath, 0755)
+
+			// create certificates
+			clientServerKeyPair := tlstest.CreateClientServerCertPairs(sslPath)
+
+			// use the certificate values in template to create cnf file
 			sslPathData := struct {
-				Dir string
+				Dir        string
+				ServerCert string
+				ServerKey  string
 			}{
-				Dir: sslPath,
+				Dir:        sslPath,
+				ServerCert: clientServerKeyPair.ServerCert,
+				ServerKey:  clientServerKeyPair.ServerKey,
 			}
 
-			os.MkdirAll(sslPath, 0755)
 			extraMyCNF := path.Join(sslPath, "ssl.cnf")
 			fout, err := os.Create(extraMyCNF)
 			if err != nil {
@@ -120,14 +130,12 @@ func (mysqlctl *MysqlctlProcess) startProcess(init bool) (*exec.Cmd, error) {
 
 			template.Must(template.New(fmt.Sprintf("%010d", mysqlctl.TabletUID)).Parse(`
 ssl_ca={{.Dir}}/ca-cert.pem
-ssl_cert={{.Dir}}/server-001-cert.pem
-ssl_key={{.Dir}}/server-001-key.pem
+ssl_cert={{.ServerCert}}
+ssl_key={{.ServerKey}}
 `)).Execute(fout, sslPathData)
 			if err := fout.Close(); err != nil {
 				return nil, err
 			}
-
-			tlstest.CreateClientServerCertPairs(sslPath)
 
 			tmpProcess.Env = append(tmpProcess.Env, "EXTRA_MY_CNF="+extraMyCNF)
 			tmpProcess.Env = append(tmpProcess.Env, "VTDATAROOT="+os.Getenv("VTDATAROOT"))
@@ -199,6 +207,14 @@ func (mysqlctl *MysqlctlProcess) StopProcess() (*exec.Cmd, error) {
 	return tmpProcess, tmpProcess.Start()
 }
 
+func (mysqlctl *MysqlctlProcess) BasePath() string {
+	return path.Join(os.Getenv("VTDATAROOT"), fmt.Sprintf("/vt_%010d", mysqlctl.TabletUID))
+}
+
+func (mysqlctl *MysqlctlProcess) BinaryLogsPath() string {
+	return path.Join(mysqlctl.BasePath(), "bin-logs")
+}
+
 // CleanupFiles clean the mysql files to make sure we can start the same process again
 func (mysqlctl *MysqlctlProcess) CleanupFiles(tabletUID int) {
 	os.RemoveAll(path.Join(os.Getenv("VTDATAROOT"), fmt.Sprintf("/vt_%010d/data", tabletUID)))
@@ -208,20 +224,51 @@ func (mysqlctl *MysqlctlProcess) CleanupFiles(tabletUID int) {
 	os.RemoveAll(path.Join(os.Getenv("VTDATAROOT"), fmt.Sprintf("/vt_%010d/innodb", tabletUID)))
 }
 
+// Connect returns a new connection to the underlying MySQL server
+func (mysqlctl *MysqlctlProcess) Connect(ctx context.Context, username string) (*mysql.Conn, error) {
+	params := mysql.ConnParams{
+		Uname:      username,
+		UnixSocket: path.Join(os.Getenv("VTDATAROOT"), fmt.Sprintf("/vt_%010d", mysqlctl.TabletUID), "/mysql.sock"),
+	}
+
+	return mysql.Connect(ctx, &params)
+}
+
 // MysqlCtlProcessInstanceOptionalInit returns a Mysqlctl handle for mysqlctl process
 // configured with the given Config.
 func MysqlCtlProcessInstanceOptionalInit(tabletUID int, mySQLPort int, tmpDirectory string, initMySQL bool) *MysqlctlProcess {
+	initFile, err := getInitDBFileUsed()
+	if err != nil {
+		log.Errorf("Couldn't find init db file - %v", err)
+	}
 	mysqlctl := &MysqlctlProcess{
 		Name:         "mysqlctl",
 		Binary:       "mysqlctl",
 		LogDirectory: tmpDirectory,
-		InitDBFile:   path.Join(os.Getenv("VTROOT"), "/config/init_db.sql"),
+		InitDBFile:   initFile,
 	}
 	mysqlctl.MySQLPort = mySQLPort
 	mysqlctl.TabletUID = tabletUID
 	mysqlctl.InitMysql = initMySQL
 	mysqlctl.SecureTransport = false
 	return mysqlctl
+}
+
+func getInitDBFileUsed() (string, error) {
+	versionStr, err := mysqlctl.GetVersionString()
+	if err != nil {
+		return "", err
+	}
+	flavor, _, err := mysqlctl.ParseVersionString(versionStr)
+	if err != nil {
+		return "", err
+	}
+	if flavor == mysqlctl.FlavorMySQL || flavor == mysqlctl.FlavorPercona {
+		return path.Join(os.Getenv("VTROOT"), "/config/init_db.sql"), nil
+	}
+	// Non-MySQL instances for example MariaDB, will use init_testserver_db.sql which does not contain super_read_only global variable.
+	// Even though MariaDB support is deprecated (https://github.com/vitessio/vitess/issues/9518) but we still support migration scenario.
+	return path.Join(os.Getenv("VTROOT"), "go/test/endtoend/vreplication/testdata/config/init_testserver_db.sql"), nil
 }
 
 // MysqlCtlProcessInstance returns a Mysqlctl handle for mysqlctl process

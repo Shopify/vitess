@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -52,14 +53,7 @@ var (
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) (err error) {
 			logutil.PurgeLogs()
 			traceCloser = trace.StartTracing("vtctldclient")
-			if VtctldClientProtocol != "local" {
-				if err := ensureServerArg(); err != nil {
-					return err
-				}
-			}
-
-			client, err = vtctldclient.New(VtctldClientProtocol, server)
-
+			client, err = getClientForCommand(cmd)
 			ctx := cmd.Context()
 			if ctx == nil {
 				ctx = context.Background()
@@ -69,9 +63,11 @@ var (
 		},
 		// Similarly, PersistentPostRun cleans up the resources spawned by
 		// PersistentPreRun.
-		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPostRunE: func(cmd *cobra.Command, args []string) (err error) {
 			commandCancel()
-			err := client.Close()
+			if client != nil {
+				err = client.Close()
+			}
 			trace.LogErrorsWhenClosing(traceCloser)
 			return err
 		},
@@ -110,13 +106,27 @@ var (
 
 var errNoServer = errors.New("please specify --server <vtctld_host:vtctld_port> to specify the vtctld server to connect to")
 
-// ensureServerArg validates that --server was passed to the CLI.
-func ensureServerArg() error {
-	if server == "" {
-		return errNoServer
+const skipClientCreationKey = "skip_client_creation"
+
+// getClientForCommand returns a vtctldclient.VtctldClient for a given command.
+// It validates that --server was passed to the CLI for commands that need it.
+func getClientForCommand(cmd *cobra.Command) (vtctldclient.VtctldClient, error) {
+	if skipStr, ok := cmd.Annotations[skipClientCreationKey]; ok {
+		skipClientCreation, err := strconv.ParseBool(skipStr)
+		if err != nil {
+			skipClientCreation = false
+		}
+
+		if skipClientCreation {
+			return nil, nil
+		}
 	}
 
-	return nil
+	if VtctldClientProtocol != "local" && server == "" {
+		return nil, errNoServer
+	}
+
+	return vtctldclient.New(VtctldClientProtocol, server)
 }
 
 func init() {

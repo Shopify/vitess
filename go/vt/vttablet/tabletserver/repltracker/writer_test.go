@@ -22,39 +22,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
-	"vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/mysql/fakesqldb"
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/dbconfigs"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/tabletenv"
 )
-
-func TestCreateSchema(t *testing.T) {
-	db := fakesqldb.New(t)
-	defer db.Close()
-	now := time.Now()
-	tw := newTestWriter(db, &now)
-	defer tw.Close()
-	writes.Reset()
-
-	db.OrderMatters()
-	upsert := fmt.Sprintf("INSERT INTO %s.heartbeat (ts, tabletUid, keyspaceShard) VALUES (%d, %d, '%s') ON DUPLICATE KEY UPDATE ts=VALUES(ts), tabletUid=VALUES(tabletUid)",
-		"_vt", now.UnixNano(), tw.tabletAlias.Uid, tw.keyspaceShard)
-	failInsert := fakesqldb.ExpectedExecuteFetch{
-		Query: upsert,
-		Error: mysql.NewSQLError(mysql.ERBadDb, "", "bad db error"),
-	}
-	db.AddExpectedExecuteFetch(failInsert)
-	db.AddExpectedQuery(fmt.Sprintf(sqlCreateSidecarDB, "_vt"), nil)
-	db.AddExpectedQuery(fmt.Sprintf(sqlCreateHeartbeatTable, "_vt"), nil)
-	db.AddExpectedQuery(upsert, nil)
-
-	err := tw.write()
-	require.NoError(t, err)
-}
 
 func TestWriteHeartbeat(t *testing.T) {
 	db := fakesqldb.New(t)

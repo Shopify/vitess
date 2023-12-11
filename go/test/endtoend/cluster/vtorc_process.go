@@ -27,6 +27,7 @@ import (
 	"path"
 	"strings"
 	"syscall"
+	"testing"
 	"time"
 
 	"vitess.io/vitess/go/vt/log"
@@ -36,14 +37,15 @@ import (
 // vtorc as a separate process for testing
 type VTOrcProcess struct {
 	VtctlProcess
-	Port       int
-	LogDir     string
-	ExtraArgs  []string
-	ConfigPath string
-	Config     VTOrcConfiguration
-	WebPort    int
-	proc       *exec.Cmd
-	exit       chan error
+	Port        int
+	LogDir      string
+	LogFileName string
+	ExtraArgs   []string
+	ConfigPath  string
+	Config      VTOrcConfiguration
+	WebPort     int
+	proc        *exec.Cmd
+	exit        chan error
 }
 
 type VTOrcConfiguration struct {
@@ -83,7 +85,16 @@ func (orc *VTOrcProcess) Setup() (err error) {
 
 	// create the configuration file
 	timeNow := time.Now().UnixNano()
-	configFile, _ := os.Create(path.Join(orc.LogDir, fmt.Sprintf("orc-config-%d.json", timeNow)))
+	err = os.MkdirAll(orc.LogDir, 0755)
+	if err != nil {
+		log.Errorf("cannot create log directory for vtorc: %v", err)
+		return err
+	}
+	configFile, err := os.Create(path.Join(orc.LogDir, fmt.Sprintf("orc-config-%d.json", timeNow)))
+	if err != nil {
+		log.Errorf("cannot create config file for vtorc: %v", err)
+		return err
+	}
 	orc.ConfigPath = configFile.Name()
 
 	// Add the default configurations and print them out
@@ -123,7 +134,14 @@ func (orc *VTOrcProcess) Setup() (err error) {
 	orc.proc.Args = append(orc.proc.Args, orc.ExtraArgs...)
 	orc.proc.Args = append(orc.proc.Args, "--alsologtostderr")
 
-	errFile, _ := os.Create(path.Join(orc.LogDir, fmt.Sprintf("orc-stderr-%d.txt", timeNow)))
+	if orc.LogFileName == "" {
+		orc.LogFileName = fmt.Sprintf("orc-stderr-%d.txt", timeNow)
+	}
+	errFile, err := os.Create(path.Join(orc.LogDir, orc.LogFileName))
+	if err != nil {
+		log.Errorf("cannot create error log file for vtorc: %v", err)
+		return err
+	}
 	orc.proc.Stderr = errFile
 
 	orc.proc.Env = append(orc.proc.Env, os.Environ()...)
@@ -139,6 +157,7 @@ func (orc *VTOrcProcess) Setup() (err error) {
 	go func() {
 		if orc.proc != nil {
 			orc.exit <- orc.proc.Wait()
+			close(orc.exit)
 		}
 	}()
 
@@ -160,8 +179,9 @@ func (orc *VTOrcProcess) TearDown() error {
 
 	case <-time.After(30 * time.Second):
 		_ = orc.proc.Process.Kill()
+		err := <-orc.exit
 		orc.proc = nil
-		return <-orc.exit
+		return err
 	}
 }
 
@@ -191,10 +211,46 @@ func (orc *VTOrcProcess) MakeAPICall(endpoint string) (status int, response stri
 	url := fmt.Sprintf("http://localhost:%d/%s", orc.Port, endpoint)
 	resp, err := http.Get(url)
 	if err != nil {
-		return resp.StatusCode, "", err
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		return status, "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+	}()
 
 	respByte, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(respByte), err
+}
+
+// MakeAPICallRetry is used to make an API call and retries until success
+func (orc *VTOrcProcess) MakeAPICallRetry(t *testing.T, url string) {
+	t.Helper()
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for api to work")
+			return
+		default:
+			status, _, err := orc.MakeAPICall(url)
+			if err == nil && status == 200 {
+				return
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+// DisableGlobalRecoveries stops VTOrc from running any recoveries
+func (orc *VTOrcProcess) DisableGlobalRecoveries(t *testing.T) {
+	orc.MakeAPICallRetry(t, "/api/disable-global-recoveries")
+}
+
+// EnableGlobalRecoveries allows VTOrc to run any recoveries
+func (orc *VTOrcProcess) EnableGlobalRecoveries(t *testing.T) {
+	orc.MakeAPICallRetry(t, "/api/enable-global-recoveries")
 }

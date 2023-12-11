@@ -29,20 +29,19 @@ import (
 	"testing"
 	"time"
 
-	"vitess.io/vitess/go/vt/log"
-
+	"github.com/PuerkitoBio/goquery"
 	"github.com/buger/jsonparser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"vitess.io/vitess/go/test/endtoend/cluster"
-	"vitess.io/vitess/go/vt/schema"
-
-	"github.com/PuerkitoBio/goquery"
-
 	"vitess.io/vitess/go/mysql"
+	"vitess.io/vitess/go/sqlescape"
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/test/endtoend/cluster"
+	"vitess.io/vitess/go/vt/log"
+	"vitess.io/vitess/go/vt/schema"
+	"vitess.io/vitess/go/vt/sqlparser"
 )
 
 const (
@@ -237,7 +236,12 @@ func validateThatQueryExecutesOnTablet(t *testing.T, conn *mysql.Conn, tablet *c
 	return newCount == count+1
 }
 
-func waitForWorkflowState(t *testing.T, vc *VitessCluster, ksWorkflow string, wantState string) {
+// waitForWorkflowState waits for all of the given workflow's
+// streams to reach the provided state. You can pass optional
+// key value pairs of the form "key==value" to also wait for
+// additional stream sub-state such as "Message==for vdiff".
+// Invalid checks are ignored.
+func waitForWorkflowState(t *testing.T, vc *VitessCluster, ksWorkflow string, wantState string, fieldEqualityChecks ...string) {
 	done := false
 	timer := time.NewTimer(workflowStateTimeout)
 	log.Infof("Waiting for workflow %q to fully reach %q state", ksWorkflow, wantState)
@@ -251,9 +255,21 @@ func waitForWorkflowState(t *testing.T, vc *VitessCluster, ksWorkflow string, wa
 			tabletStreams.ForEach(func(streamId, streamInfos gjson.Result) bool { // for each stream
 				if streamId.String() == "PrimaryReplicationStatuses" {
 					streamInfos.ForEach(func(attributeKey, attributeValue gjson.Result) bool { // for each attribute in the stream
+						// we need to wait for all streams to have the desired state
 						state = attributeValue.Get("State").String()
-						if state != wantState {
-							done = false // we need to wait for all streams to have the desired state
+						if state == wantState {
+							for i := 0; i < len(fieldEqualityChecks); i++ {
+								if kvparts := strings.Split(fieldEqualityChecks[i], "=="); len(kvparts) == 2 {
+									key := kvparts[0]
+									val := kvparts[1]
+									res := attributeValue.Get(key).String()
+									if !strings.EqualFold(res, val) {
+										done = false
+									}
+								}
+							}
+						} else {
+							done = false
 						}
 						return true
 					})
@@ -268,10 +284,66 @@ func waitForWorkflowState(t *testing.T, vc *VitessCluster, ksWorkflow string, wa
 		}
 		select {
 		case <-timer.C:
-			require.FailNowf(t, "workflow %q did not fully reach the expected state of %q before the timeout of %s; last seen output: %s",
-				ksWorkflow, wantState, workflowStateTimeout, output)
+			var extraRequirements string
+			if len(fieldEqualityChecks) > 0 {
+				extraRequirements = fmt.Sprintf(" with the additional requirements of \"%v\"", fieldEqualityChecks)
+			}
+			require.FailNowf(t, "workflow state not reached",
+				"Workflow %q did not fully reach the expected state of %q%s before the timeout of %s; last seen output: %s",
+				ksWorkflow, wantState, extraRequirements, workflowStateTimeout, output)
 		default:
 			time.Sleep(defaultTick)
+		}
+	}
+}
+
+// confirmTablesHaveSecondaryKeys confirms that the tables provided
+// as a CSV have secondary keys. This is useful when testing the
+// --defer-secondary-keys flag to confirm that the secondary keys
+// were re-added by the time the workflow hits the running phase.
+// For a Reshard workflow, where no tables are specififed, pass
+// an empty string for the tables and all tables in the target
+// keyspace will be checked.
+func confirmTablesHaveSecondaryKeys(t *testing.T, tablets []*cluster.VttabletProcess, ksName string, tables string) {
+	require.NotNil(t, tablets)
+	require.NotNil(t, tablets[0])
+	var tableArr []string
+	if strings.TrimSpace(tables) != "" {
+		tableArr = strings.Split(tables, ",")
+	}
+	if len(tableArr) == 0 { // We don't specify any for Reshard.
+		// In this case we check all of them.
+		res, err := tablets[0].QueryTablet("show tables", ksName, true)
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		for _, row := range res.Rows {
+			tableArr = append(tableArr, row[0].ToString())
+		}
+	}
+	for _, tablet := range tablets {
+		for _, table := range tableArr {
+			if schema.IsInternalOperationTableName(table) {
+				continue
+			}
+			table := strings.TrimSpace(table)
+			secondaryKeys := 0
+			res, err := tablet.QueryTablet(fmt.Sprintf("show create table %s", sqlescape.EscapeID(table)), ksName, true)
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			row := res.Named().Row()
+			tableSchema := row["Create Table"].ToString()
+			parsedDDL, err := sqlparser.ParseStrictDDL(tableSchema)
+			require.NoError(t, err)
+			createTable, ok := parsedDDL.(*sqlparser.CreateTable)
+			require.True(t, ok)
+			require.NotNil(t, createTable)
+			require.NotNil(t, createTable.GetTableSpec())
+			for _, index := range createTable.GetTableSpec().Indexes {
+				if !index.Info.Primary {
+					secondaryKeys++
+				}
+			}
+			require.Greater(t, secondaryKeys, 0, "Table %s does not have any secondary keys", table)
 		}
 	}
 }
@@ -434,13 +506,6 @@ func printShardPositions(vc *VitessCluster, ksShards []string) {
 	}
 }
 
-func clearRoutingRules(t *testing.T, vc *VitessCluster) error {
-	if _, err := vc.VtctlClient.ExecuteCommandWithOutput("ApplyRoutingRules", "--", "--rules={}"); err != nil {
-		return err
-	}
-	return nil
-}
-
 func printRoutingRules(t *testing.T, vc *VitessCluster, msg string) error {
 	var output string
 	var err error
@@ -461,6 +526,7 @@ func getDebugVar(t *testing.T, port int, varPath []string) (string, error) {
 	var val []byte
 	var err error
 	url := fmt.Sprintf("http://localhost:%d/debug/vars", port)
+	log.Infof("url: %s, varPath: %s", url, strings.Join(varPath, ":"))
 	body := getHTTPBody(url)
 	val, _, _, err = jsonparser.Get([]byte(body), varPath...)
 	require.NoError(t, err)
@@ -538,4 +604,39 @@ func getShardRoutingRules(t *testing.T) string {
 	output = re.ReplaceAllString(output, "")
 	output = strings.TrimSpace(output)
 	return output
+}
+
+func verifyCopyStateIsOptimized(t *testing.T, tablet *cluster.VttabletProcess) {
+	// Update information_schem with the latest data
+	_, err := tablet.QueryTablet("analyze table _vt.copy_state", "", false)
+	require.NoError(t, err)
+
+	// Verify that there's no delete marked rows and we reset the auto-inc value.
+	// MySQL doesn't always immediately update information_schema so we wait.
+	tmr := time.NewTimer(defaultTimeout)
+	defer tmr.Stop()
+	query := "select data_free, auto_increment from information_schema.tables where table_schema='_vt' and table_name='copy_state'"
+	var dataFree, autoIncrement int64
+	for {
+		res, err := tablet.QueryTablet(query, "", false)
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.Equal(t, 1, len(res.Rows))
+		dataFree, err = res.Rows[0][0].ToInt64()
+		require.NoError(t, err)
+		autoIncrement, err = res.Rows[0][1].ToInt64()
+		require.NoError(t, err)
+		if dataFree == 0 && autoIncrement == 1 {
+			return
+		}
+
+		select {
+		case <-tmr.C:
+			require.FailNowf(t, "timed out waiting for copy_state table to be optimized",
+				"data_free should be 0 and auto_increment should be 1, last seen values were %d and %d respectively",
+				dataFree, autoIncrement)
+		default:
+			time.Sleep(defaultTick)
+		}
+	}
 }

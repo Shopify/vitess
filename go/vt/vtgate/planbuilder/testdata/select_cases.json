@@ -254,6 +254,45 @@
     }
   },
   {
+    "comment": "select limit with timeout directive sets QueryTimeout in the route",
+    "query": "select /*vt+ QUERY_TIMEOUT_MS=1000 */ * from main.unsharded limit 10",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select /*vt+ QUERY_TIMEOUT_MS=1000 */ * from main.unsharded limit 10",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Unsharded",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select * from unsharded where 1 != 1",
+        "Query": "select /*vt+ QUERY_TIMEOUT_MS=1000 */ * from unsharded limit 10",
+        "QueryTimeout": 1000,
+        "Table": "unsharded"
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select /*vt+ QUERY_TIMEOUT_MS=1000 */ * from main.unsharded limit 10",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Unsharded",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select * from unsharded where 1 != 1",
+        "Query": "select /*vt+ QUERY_TIMEOUT_MS=1000 */ * from unsharded limit 10",
+        "QueryTimeout": 1000,
+        "Table": "unsharded"
+      },
+      "TablesUsed": [
+        "main.unsharded"
+      ]
+    }
+  },
+  {
     "comment": "select with partial scatter directive",
     "query": "select /*vt+ SCATTER_ERRORS_AS_WARNINGS */ * from user",
     "v3-plan": {
@@ -600,7 +639,7 @@
   {
     "comment": "test table lookup failure for authoritative code path",
     "query": "select a.* from authoritative",
-    "v3-plan": "table a not found",
+    "v3-plan": "VT05004: table 'a' does not exist",
     "gen4-plan": "Unknown table 'a'"
   },
   {
@@ -757,7 +796,7 @@
   {
     "comment": "Cannot auto-resolve for cross-shard joins",
     "query": "select col from user join user_extra",
-    "v3-plan": "symbol col not found",
+    "v3-plan": "VT03019: symbol col not found",
     "gen4-plan": "Column 'col' in field list is ambiguous"
   },
   {
@@ -2359,13 +2398,13 @@
   {
     "comment": "duplicate columns not allowed in derived table",
     "query": "select * from (select user.id, user_extra.id from user join user_extra) as t",
-    "v3-plan": "duplicate column names in subquery: id",
+    "v3-plan": "VT12001: unsupported: duplicate column names in subquery: id",
     "gen4-plan": "Duplicate column name 'id'"
   },
   {
     "comment": "non-existent symbol in cross-shard derived table",
     "query": "select t.col from (select user.id from user join user_extra) as t",
-    "v3-plan": "symbol t.col not found in table or subquery",
+    "v3-plan": "VT03019: symbol t.col not found",
     "gen4-plan": "symbol t.col not found"
   },
   {
@@ -3162,12 +3201,14 @@
   {
     "comment": "sql_calc_found_rows in sub queries",
     "query": "select * from music where user_id IN (select sql_calc_found_rows * from music limit 10)",
-    "plan": "Incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'"
+    "v3-plan": "VT03008: incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'",
+    "gen4-plan": "Incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'"
   },
   {
     "comment": "sql_calc_found_rows in derived table",
     "query": "select sql_calc_found_rows * from (select sql_calc_found_rows * from music limit 10) t limit 1",
-    "plan": "Incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'"
+    "v3-plan": "VT03008: incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'",
+    "gen4-plan": "Incorrect usage/placement of 'SQL_CALC_FOUND_ROWS'"
   },
   {
     "comment": "select from unsharded keyspace into dumpfile",
@@ -3867,7 +3908,7 @@
   {
     "comment": "select (select col from user where user_extra.id = 4 limit 1) as a from user join user_extra",
     "query": "select (select col from user where user_extra.id = 4 limit 1) as a from user join user_extra",
-    "plan": "unsupported: cross-shard correlated subquery"
+    "plan": "VT12001: unsupported: cross-shard correlated subquery"
   },
   {
     "comment": "plan test for a natural character set string",
@@ -3991,7 +4032,7 @@
   {
     "comment": "correlated subquery in exists clause",
     "query": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id)",
-    "v3-plan": "unsupported: cross-shard correlated subquery",
+    "v3-plan": "VT12001: unsupported: cross-shard correlated subquery",
     "gen4-plan": {
       "QueryType": "SELECT",
       "Original": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id)",
@@ -4040,7 +4081,7 @@
   {
     "comment": "correlated subquery in exists clause with an order by",
     "query": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id) order by col",
-    "v3-plan": "unsupported: cross-shard correlated subquery",
+    "v3-plan": "VT12001: unsupported: cross-shard correlated subquery",
     "gen4-plan": {
       "QueryType": "SELECT",
       "Original": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id) order by col",
@@ -4090,7 +4131,7 @@
   {
     "comment": "correlated subquery having dependencies on two tables",
     "query": "select 1 from user u1, user u2 where exists (select 1 from user_extra ue where ue.col = u1.col and ue.col = u2.col)",
-    "v3-plan": "unsupported: cross-shard correlated subquery",
+    "v3-plan": "VT12001: unsupported: cross-shard correlated subquery",
     "gen4-plan": {
       "QueryType": "SELECT",
       "Original": "select 1 from user u1, user u2 where exists (select 1 from user_extra ue where ue.col = u1.col and ue.col = u2.col)",
@@ -4155,7 +4196,7 @@
   {
     "comment": "correlated subquery using a column twice",
     "query": "select 1 from user u where exists (select 1 from user_extra ue where ue.col = u.col and u.col = ue.col2)",
-    "v3-plan": "unsupported: cross-shard correlated subquery",
+    "v3-plan": "VT12001: unsupported: cross-shard correlated subquery",
     "gen4-plan": {
       "QueryType": "SELECT",
       "Original": "select 1 from user u where exists (select 1 from user_extra ue where ue.col = u.col and u.col = ue.col2)",
@@ -4200,8 +4241,8 @@
   {
     "comment": "correlated subquery part of an OR clause",
     "query": "select 1 from user u where u.col = 6 or exists (select 1 from user_extra ue where ue.col = u.col and u.col = ue.col2)",
-    "v3-plan": "unsupported: cross-shard correlated subquery",
-    "gen4-plan": "exists sub-queries are only supported with AND clause"
+    "v3-plan": "VT12001: unsupported: cross-shard correlated subquery",
+    "gen4-plan": "VT12001: unsupported: EXISTS sub-queries are only supported with AND clause"
   },
   {
     "comment": "correlated subquery that is dependent on one side of a join, fully mergeable",
@@ -4578,7 +4619,6 @@
         "Table": "dual"
       },
       "TablesUsed": [
-        "information_schema.TABLES",
         "main.dual"
       ]
     }
@@ -6361,7 +6401,7 @@
   {
     "comment": "Unmergeable scatter subquery with `GROUP BY` on-non vindex column",
     "query": "SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.genre = 'pop' GROUP BY music.genre)",
-    "v3-plan": "unsupported: in scatter query: group by column must reference column in SELECT list",
+    "v3-plan": "VT12001: unsupported: in scatter query: GROUP BY column must reference column in SELECT list",
     "gen4-plan": {
       "QueryType": "SELECT",
       "Original": "SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.genre = 'pop' GROUP BY music.genre)",
@@ -7634,7 +7674,7 @@
   {
     "comment": "limit on the vtgate has to be executed on the LHS of a join",
     "query": "select id from user join (select user_id from user_extra limit 10) ue on user.id = ue.user_id",
-    "v3-plan": "unsupported: filtering on results of cross-shard subquery",
+    "v3-plan": "VT12001: unsupported: filtering on results of cross-shard subquery",
     "gen4-plan": {
       "QueryType": "SELECT",
       "Original": "select id from user join (select user_id from user_extra limit 10) ue on user.id = ue.user_id",
@@ -7698,7 +7738,7 @@
   {
     "comment": "select user.a, t.b from user join (select id, count(*) b, req from user_extra group by req, id) as t on user.id = t.id",
     "query": "select user.a, t.b from user join (select id, count(*) b, req from user_extra group by req, id) as t on user.id = t.id",
-    "v3-plan": "unsupported: filtering on results of cross-shard subquery",
+    "v3-plan": "VT12001: unsupported: filtering on results of cross-shard subquery",
     "gen4-plan": {
       "QueryType": "SELECT",
       "Original": "select user.a, t.b from user join (select id, count(*) b, req from user_extra group by req, id) as t on user.id = t.id",
@@ -7766,13 +7806,13 @@
   {
     "comment": "cant switch sides for outer joins",
     "query": "select id from user left join (select user_id from user_extra limit 10) ue on user.id = ue.user_id",
-    "plan": "unsupported: LEFT JOIN not supported for derived tables"
+    "plan": "VT12001: unsupported: LEFT JOIN with derived tables"
   },
   {
     "comment": "limit on both sides means that we can't evaluate this at all",
     "query": "select id from (select id from user limit 10) u join (select user_id from user_extra limit 10) ue on u.id = ue.user_id",
-    "v3-plan": "unsupported: filtering on results of cross-shard subquery",
-    "gen4-plan": "unsupported: JOIN not supported between derived tables"
+    "v3-plan": "VT12001: unsupported: filtering on results of cross-shard subquery",
+    "gen4-plan": "VT12001: unsupported: JOIN between derived tables"
   },
   {
     "comment": "SELECT music.id FROM (SELECT MAX(id) as maxt FROM music WHERE music.user_id = 5) other JOIN music ON other.maxt = music.id",
@@ -7883,40 +7923,516 @@
     }
   },
   {
-    "comment": "query with a derived table and dual table in unsharded keyspace",
-    "query": "SELECT * FROM unsharded_a AS t1  JOIN (SELECT trim((SELECT MAX(name) FROM unsharded_a)) AS name) AS t2 WHERE t1.name >= t2.name ORDER BY t1.name ASC LIMIT 1;",
+    "comment": "(OR 1 = 0) doesn't cause unnecessary scatter",
+    "query": "select * from user where id = 1 or 1 = 0",
     "v3-plan": {
       "QueryType": "SELECT",
-      "Original": "SELECT * FROM unsharded_a AS t1  JOIN (SELECT trim((SELECT MAX(name) FROM unsharded_a)) AS name) AS t2 WHERE t1.name >= t2.name ORDER BY t1.name ASC LIMIT 1;",
+      "Original": "select * from user where id = 1 or 1 = 0",
       "Instructions": {
         "OperatorType": "Route",
-        "Variant": "Unsharded",
+        "Variant": "Scatter",
         "Keyspace": {
-          "Name": "main",
-          "Sharded": false
+          "Name": "user",
+          "Sharded": true
         },
-        "FieldQuery": "select * from unsharded_a as t1 join (select trim((select max(`name`) from unsharded_a where 1 != 1)) as `name` from dual where 1 != 1) as t2 where 1 != 1",
-        "Query": "select * from unsharded_a as t1 join (select trim((select max(`name`) from unsharded_a)) as `name` from dual) as t2 where t1.`name` >= t2.`name` order by t1.`name` asc limit 1",
-        "Table": "unsharded_a, dual"
+        "FieldQuery": "select * from `user` where 1 != 1",
+        "Query": "select * from `user` where id = 1 or 1 = 0",
+        "Table": "`user`"
       }
     },
     "gen4-plan": {
       "QueryType": "SELECT",
-      "Original": "SELECT * FROM unsharded_a AS t1  JOIN (SELECT trim((SELECT MAX(name) FROM unsharded_a)) AS name) AS t2 WHERE t1.name >= t2.name ORDER BY t1.name ASC LIMIT 1;",
+      "Original": "select * from user where id = 1 or 1 = 0",
       "Instructions": {
         "OperatorType": "Route",
-        "Variant": "Unsharded",
+        "Variant": "EqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from `user` where 1 != 1",
+        "Query": "select * from `user` where id = 1",
+        "Table": "`user`",
+        "Values": [
+          "INT64(1)"
+        ],
+        "Vindex": "user_index"
+      },
+      "TablesUsed": [
+        "user.user"
+      ]
+    }
+  },
+  {
+    "comment": "(OR 2 < 1) doesn't cause unnecessary scatter",
+    "query": "select * from user where id = 1 or 2 < 1",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from user where id = 1 or 2 < 1",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from `user` where 1 != 1",
+        "Query": "select * from `user` where id = 1 or 2 < 1",
+        "Table": "`user`"
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from user where id = 1 or 2 < 1",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "EqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from `user` where 1 != 1",
+        "Query": "select * from `user` where id = 1",
+        "Table": "`user`",
+        "Values": [
+          "INT64(1)"
+        ],
+        "Vindex": "user_index"
+      },
+      "TablesUsed": [
+        "user.user"
+      ]
+    }
+  },
+  {
+    "comment": "query with a derived table and dual table in unsharded keyspace",
+    "query": "SELECT * FROM unsharded_a AS t1  JOIN (SELECT trim((SELECT MAX(name) FROM unsharded_a)) AS name) AS t2 WHERE t1.name >= t2.name ORDER BY t1.name ASC LIMIT 1;",
+    "v3-plan": {
+      "Instructions": {
+        "FieldQuery": "select * from unsharded_a as t1 join (select trim((select max(`name`) from unsharded_a where 1 != 1)) as `name` from dual where 1 != 1) as t2 where 1 != 1",
         "Keyspace": {
           "Name": "main",
           "Sharded": false
         },
-        "FieldQuery": "select * from unsharded_a as t1 join (select trim((select max(`name`) from unsharded_a where 1 != 1)) as `name` from dual where 1 != 1) as t2 where 1 != 1",
+        "OperatorType": "Route",
         "Query": "select * from unsharded_a as t1 join (select trim((select max(`name`) from unsharded_a)) as `name` from dual) as t2 where t1.`name` >= t2.`name` order by t1.`name` asc limit 1",
-        "Table": "dual, unsharded_a"
+        "Table": "unsharded_a, dual",
+        "Variant": "Unsharded"
       },
+      "Original": "SELECT * FROM unsharded_a AS t1  JOIN (SELECT trim((SELECT MAX(name) FROM unsharded_a)) AS name) AS t2 WHERE t1.name >= t2.name ORDER BY t1.name ASC LIMIT 1;",
+      "QueryType": "SELECT"
+    },
+    "gen4-plan": {
+      "Instructions": {
+        "FieldQuery": "select * from unsharded_a as t1 join (select trim((select max(`name`) from unsharded_a where 1 != 1)) as `name` from dual where 1 != 1) as t2 where 1 != 1",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "OperatorType": "Route",
+        "Query": "select * from unsharded_a as t1 join (select trim((select max(`name`) from unsharded_a)) as `name` from dual) as t2 where t1.`name` >= t2.`name` order by t1.`name` asc limit 1",
+        "Table": "dual, unsharded_a",
+        "Variant": "Unsharded"
+      },
+      "Original": "SELECT * FROM unsharded_a AS t1  JOIN (SELECT trim((SELECT MAX(name) FROM unsharded_a)) AS name) AS t2 WHERE t1.name >= t2.name ORDER BY t1.name ASC LIMIT 1;",
+      "QueryType": "SELECT",
       "TablesUsed": [
         "main.dual",
         "main.unsharded_a"
+      ]
+    }
+  },
+  {
+    "comment": "subquery having join table on clause, using column reference of outer select table",
+    "query": "select (select 1 from user u1 join user u2 on u1.id = u2.id and u1.id = u3.id) subquery from user u3 where u3.id = 1",
+    "v3-plan": "VT03019: symbol u3.id not found",
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select (select 1 from user u1 join user u2 on u1.id = u2.id and u1.id = u3.id) subquery from user u3 where u3.id = 1",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "EqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select (select 1 from `user` as u1 join `user` as u2 on u1.id = u2.id and u1.id = u3.id where 1 != 1) as subquery from `user` as u3 where 1 != 1",
+        "Query": "select (select 1 from `user` as u1 join `user` as u2 on u1.id = u2.id and u1.id = u3.id) as subquery from `user` as u3 where u3.id = 1",
+        "Table": "`user`",
+        "Values": [
+          "INT64(1)"
+        ],
+        "Vindex": "user_index"
+      },
+      "TablesUsed": [
+        "user.user"
+      ]
+    }
+  },
+  {
+    "comment": "allow last_insert_id with argument",
+    "query": "select last_insert_id(id) from user",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select last_insert_id(id) from user",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select last_insert_id(id) from `user` where 1 != 1",
+        "Query": "select last_insert_id(id) from `user`",
+        "Table": "`user`"
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select last_insert_id(id) from user",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select last_insert_id(id) from `user` where 1 != 1",
+        "Query": "select last_insert_id(id) from `user`",
+        "Table": "`user`"
+      },
+      "TablesUsed": [
+        "user.user"
+      ]
+    }
+  },
+  {
+    "comment": "pick email as vindex lookup",
+    "query": "select * from customer where email = 'a@mail.com'",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where email = 'a@mail.com'",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Equal",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from customer where 1 != 1",
+        "Query": "select * from customer where email = 'a@mail.com'",
+        "Table": "customer",
+        "Values": [
+          "VARCHAR(\"a@mail.com\")"
+        ],
+        "Vindex": "unq_lkp_vdx"
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where email = 'a@mail.com'",
+      "Instructions": {
+        "OperatorType": "VindexLookup",
+        "Variant": "Equal",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "Values": [
+          "VARCHAR(\"a@mail.com\")"
+        ],
+        "Vindex": "unq_lkp_vdx",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "IN",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select unq_key, keyspace_id from unq_lkp_idx where 1 != 1",
+            "Query": "select unq_key, keyspace_id from unq_lkp_idx where unq_key in ::__vals",
+            "Table": "unq_lkp_idx",
+            "Values": [
+              ":unq_key"
+            ],
+            "Vindex": "shard_index"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "ByDestination",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select * from customer where 1 != 1",
+            "Query": "select * from customer where email = 'a@mail.com'",
+            "Table": "customer"
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.customer"
+      ]
+    }
+  },
+  {
+    "comment": "phone is in backfill vindex - not selected for vindex lookup",
+    "query": "select * from customer where phone = 123456",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where phone = 123456",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Equal",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from customer where 1 != 1",
+        "Query": "select * from customer where phone = 123456",
+        "Table": "customer",
+        "Values": [
+          "INT64(123456)"
+        ],
+        "Vindex": "unq_lkp_bf_vdx"
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where phone = 123456",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from customer where 1 != 1",
+        "Query": "select * from customer where phone = 123456",
+        "Table": "customer"
+      },
+      "TablesUsed": [
+        "user.customer"
+      ]
+    }
+  },
+  {
+    "comment": "email vindex is costly than phone vindex - but phone vindex is backfiling hence ignored",
+    "query": "select * from customer where email = 'a@mail.com' and phone = 123456",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where email = 'a@mail.com' and phone = 123456",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Equal",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from customer where 1 != 1",
+        "Query": "select * from customer where email = 'a@mail.com' and phone = 123456",
+        "Table": "customer",
+        "Values": [
+          "INT64(123456)"
+        ],
+        "Vindex": "unq_lkp_bf_vdx"
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where email = 'a@mail.com' and phone = 123456",
+      "Instructions": {
+        "OperatorType": "VindexLookup",
+        "Variant": "Equal",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "Values": [
+          "VARCHAR(\"a@mail.com\")"
+        ],
+        "Vindex": "unq_lkp_vdx",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "IN",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select unq_key, keyspace_id from unq_lkp_idx where 1 != 1",
+            "Query": "select unq_key, keyspace_id from unq_lkp_idx where unq_key in ::__vals",
+            "Table": "unq_lkp_idx",
+            "Values": [
+              ":unq_key"
+            ],
+            "Vindex": "shard_index"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "ByDestination",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select * from customer where 1 != 1",
+            "Query": "select * from customer where email = 'a@mail.com' and phone = 123456",
+            "Table": "customer"
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.customer"
+      ]
+    }
+  },
+  {
+    "comment": "predicate order changed: email vindex is costly than phone vindex - but phone vindex is backfiling hence ignored",
+    "query": "select * from customer where phone = 123456 and email = 'a@mail.com'",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where phone = 123456 and email = 'a@mail.com'",
+      "Instructions": {
+        "OperatorType": "Route",
+        "Variant": "Equal",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from customer where 1 != 1",
+        "Query": "select * from customer where phone = 123456 and email = 'a@mail.com'",
+        "Table": "customer",
+        "Values": [
+          "INT64(123456)"
+        ],
+        "Vindex": "unq_lkp_bf_vdx"
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select * from customer where phone = 123456 and email = 'a@mail.com'",
+      "Instructions": {
+        "OperatorType": "VindexLookup",
+        "Variant": "Equal",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "Values": [
+          "VARCHAR(\"a@mail.com\")"
+        ],
+        "Vindex": "unq_lkp_vdx",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "IN",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select unq_key, keyspace_id from unq_lkp_idx where 1 != 1",
+            "Query": "select unq_key, keyspace_id from unq_lkp_idx where unq_key in ::__vals",
+            "Table": "unq_lkp_idx",
+            "Values": [
+              ":unq_key"
+            ],
+            "Vindex": "shard_index"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "ByDestination",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select * from customer where 1 != 1",
+            "Query": "select * from customer where phone = 123456 and email = 'a@mail.com'",
+            "Table": "customer"
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.customer"
+      ]
+    }
+  },
+  {
+    "comment": "column with qualifier is correctly used",
+    "query": "select u.foo, ue.foo as apa from user u, user_extra ue order by foo ",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select u.foo, ue.foo as apa from user u, user_extra ue order by foo ",
+      "Instructions": {
+        "OperatorType": "Join",
+        "Variant": "Join",
+        "JoinColumnIndexes": "L:0,R:0",
+        "TableName": "`user`_user_extra",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select u.foo, weight_string(u.foo) from `user` as u where 1 != 1",
+            "OrderBy": "(0|1) ASC",
+            "Query": "select u.foo, weight_string(u.foo) from `user` as u order by foo asc",
+            "ResultColumns": 1,
+            "Table": "`user`"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select ue.foo as apa from user_extra as ue where 1 != 1",
+            "Query": "select ue.foo as apa from user_extra as ue",
+            "Table": "user_extra"
+          }
+        ]
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select u.foo, ue.foo as apa from user u, user_extra ue order by foo ",
+      "Instructions": {
+        "OperatorType": "Join",
+        "Variant": "Join",
+        "JoinColumnIndexes": "L:0,R:0",
+        "TableName": "`user`_user_extra",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select u.foo, weight_string(u.foo) from `user` as u where 1 != 1",
+            "OrderBy": "(0|1) ASC",
+            "Query": "select u.foo, weight_string(u.foo) from `user` as u order by foo asc",
+            "Table": "`user`"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select ue.foo as apa from user_extra as ue where 1 != 1",
+            "Query": "select ue.foo as apa from user_extra as ue",
+            "Table": "user_extra"
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.user",
+        "user.user_extra"
       ]
     }
   }

@@ -17,8 +17,11 @@ limitations under the License.
 package semantics
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+
+	"vitess.io/vitess/go/vt/vtgate/evalengine"
 
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/sqlparser"
@@ -26,10 +29,11 @@ import (
 )
 
 type earlyRewriter struct {
-	binder  *binder
-	scoper  *scoper
-	clause  string
-	warning string
+	binder          *binder
+	scoper          *scoper
+	clause          string
+	warning         string
+	expandedColumns map[sqlparser.TableName][]*sqlparser.ColName
 }
 
 func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
@@ -38,7 +42,7 @@ func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
 		if node.Type != sqlparser.HavingClause {
 			return nil
 		}
-		rewriteHavingAndOrderBy(cursor, node)
+		rewriteHavingAndOrderBy(node, cursor.Parent())
 	case sqlparser.SelectExprs:
 		_, isSel := cursor.Parent().(*sqlparser.Select)
 		if !isSel {
@@ -55,7 +59,12 @@ func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
 		}
 	case sqlparser.OrderBy:
 		r.clause = "order clause"
-		rewriteHavingAndOrderBy(cursor, node)
+		rewriteHavingAndOrderBy(node, cursor.Parent())
+	case *sqlparser.OrExpr:
+		newNode := rewriteOrFalse(*node)
+		if newNode != nil {
+			cursor.Replace(newNode)
+		}
 	case sqlparser.GroupBy:
 		r.clause = "group statement"
 
@@ -79,8 +88,52 @@ func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
 		if newNode != nil {
 			node.Expr = newNode
 		}
+	case *sqlparser.ComparisonExpr:
+		lft, lftOK := node.Left.(sqlparser.ValTuple)
+		rgt, rgtOK := node.Right.(sqlparser.ValTuple)
+		if !lftOK || !rgtOK || len(lft) != len(rgt) || node.Operator != sqlparser.EqualOp {
+			return nil
+		}
+		var predicates []sqlparser.Expr
+		for i, l := range lft {
+			r := rgt[i]
+			predicates = append(predicates, &sqlparser.ComparisonExpr{
+				Operator: sqlparser.EqualOp,
+				Left:     l,
+				Right:    r,
+				Escape:   node.Escape,
+			})
+		}
+		cursor.Replace(sqlparser.AndExpressions(predicates...))
 	}
 	return nil
+}
+
+func (r *earlyRewriter) up(cursor *sqlparser.Cursor) error {
+	// this rewriting is done in the `up` phase, because we need the scope to have been
+	// filled in with the available tables
+	node, ok := cursor.Node().(*sqlparser.JoinTableExpr)
+	if !ok || len(node.Condition.Using) == 0 {
+		return nil
+	}
+
+	err := rewriteJoinUsing(r.binder, node)
+	if err != nil {
+		return err
+	}
+
+	// since the binder has already been over the join, we need to invoke it again so it
+	// can bind columns to the right tables
+	sqlparser.Rewrite(node.Condition.On, nil, func(cursor *sqlparser.Cursor) bool {
+		innerErr := r.binder.up(cursor)
+		if innerErr == nil {
+			return true
+		}
+
+		err = innerErr
+		return false
+	})
+	return err
 }
 
 func (r *earlyRewriter) expandStar(cursor *sqlparser.Cursor, node sqlparser.SelectExprs) error {
@@ -93,7 +146,7 @@ func (r *earlyRewriter) expandStar(cursor *sqlparser.Cursor, node sqlparser.Sele
 			selExprs = append(selExprs, selectExpr)
 			continue
 		}
-		starExpanded, colNames, err := expandTableColumns(starExpr, currentScope.tables, r.binder.usingJoinInfo, r.scoper.org)
+		starExpanded, colNames, err := r.expandTableColumns(starExpr, currentScope.tables, r.binder.usingJoinInfo, r.scoper.org)
 		if err != nil {
 			return err
 		}
@@ -119,49 +172,52 @@ func (r *earlyRewriter) expandStar(cursor *sqlparser.Cursor, node sqlparser.Sele
 //     HAVING/ORDER BY clause is inside an aggregation function
 //
 // This is a fucking weird scoping rule, but it's what MySQL seems to do... ¯\_(ツ)_/¯
-func rewriteHavingAndOrderBy(cursor *sqlparser.Cursor, node sqlparser.SQLNode) {
-	sel, isSel := cursor.Parent().(*sqlparser.Select)
+func rewriteHavingAndOrderBy(node, parent sqlparser.SQLNode) {
+	// TODO - clean up and comment this mess
+	sel, isSel := parent.(*sqlparser.Select)
 	if !isSel {
 		return
 	}
-	sqlparser.Rewrite(node, func(inner *sqlparser.Cursor) bool {
-		switch col := inner.Node().(type) {
-		case *sqlparser.Subquery:
-			return false
-		case *sqlparser.ColName:
-			if !col.Qualifier.IsEmpty() {
+
+	sqlparser.SafeRewrite(node, func(node, _ sqlparser.SQLNode) bool {
+		_, isSubQ := node.(*sqlparser.Subquery)
+		return !isSubQ
+	}, func(cursor *sqlparser.Cursor) bool {
+		col, ok := cursor.Node().(*sqlparser.ColName)
+		if !ok {
+			return true
+		}
+		if !col.Qualifier.IsEmpty() {
+			return true
+		}
+		_, parentIsAggr := cursor.Parent().(sqlparser.AggrFunc)
+		for _, e := range sel.SelectExprs {
+			ae, ok := e.(*sqlparser.AliasedExpr)
+			if !ok || !ae.As.Equal(col.Name) {
+				continue
+			}
+			_, aliasPointsToAggr := ae.Expr.(sqlparser.AggrFunc)
+			if parentIsAggr && aliasPointsToAggr {
 				return false
 			}
-			_, parentIsAggr := inner.Parent().(sqlparser.AggrFunc)
-			for _, e := range sel.SelectExprs {
-				ae, ok := e.(*sqlparser.AliasedExpr)
-				if !ok {
-					continue
-				}
-				if ae.As.Equal(col.Name) {
-					_, aliasPointsToAggr := ae.Expr.(sqlparser.AggrFunc)
-					if parentIsAggr && aliasPointsToAggr {
-						return false
-					}
 
-					safeToRewrite := true
-					sqlparser.Rewrite(ae.Expr, func(cursor *sqlparser.Cursor) bool {
-						switch cursor.Node().(type) {
-						case *sqlparser.ColName:
-							safeToRewrite = false
-						case sqlparser.AggrFunc:
-							return false
-						}
-						return true
-					}, nil)
-					if safeToRewrite {
-						inner.Replace(ae.Expr)
-					}
+			safeToRewrite := true
+			_ = sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
+				switch node.(type) {
+				case *sqlparser.ColName:
+					safeToRewrite = false
+					return false, nil
+				case sqlparser.AggrFunc:
+					return false, nil
 				}
+				return true, nil
+			}, ae.Expr)
+			if safeToRewrite {
+				cursor.Replace(ae.Expr)
 			}
 		}
 		return true
-	}, nil)
+	})
 }
 
 func (r *earlyRewriter) rewriteOrderByExpr(node *sqlparser.Literal) (sqlparser.Expr, error) {
@@ -206,83 +262,192 @@ func (r *earlyRewriter) rewriteOrderByExpr(node *sqlparser.Literal) (sqlparser.E
 // realCloneOfColNames clones all the expressions including ColName.
 // Since sqlparser.CloneRefOfColName does not clone col names, this method is needed.
 func realCloneOfColNames(expr sqlparser.Expr, union bool) sqlparser.Expr {
-	return sqlparser.Rewrite(sqlparser.CloneExpr(expr), func(cursor *sqlparser.Cursor) bool {
-		switch exp := cursor.Node().(type) {
-		case *sqlparser.ColName:
-			newColName := *exp
-			if union {
-				newColName.Qualifier = sqlparser.TableName{}
-			}
-			cursor.Replace(&newColName)
+	return sqlparser.CopyOnRewrite(expr, nil, func(cursor *sqlparser.CopyOnWriteCursor) {
+		exp, ok := cursor.Node().(*sqlparser.ColName)
+		if !ok {
+			return
 		}
-		return true
+
+		newColName := *exp
+		if union {
+			newColName.Qualifier = sqlparser.TableName{}
+		}
+		cursor.Replace(&newColName)
 	}, nil).(sqlparser.Expr)
 }
 
-func rewriteJoinUsing(
-	current *scope,
-	using sqlparser.Columns,
-	org originable,
-) error {
-	joinUsing := current.prepareUsingMap()
-	predicates := make([]sqlparser.Expr, 0, len(using))
-	for _, column := range using {
-		var foundTables []sqlparser.TableName
-		for _, tbl := range current.tables {
-			if !tbl.authoritative() {
-				return vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "can't handle JOIN USING without authoritative tables")
-			}
-
-			currTable := tbl.getTableSet(org)
-			usingCols := joinUsing[currTable]
-			if usingCols == nil {
-				usingCols = map[string]TableSet{}
-			}
-			for _, col := range tbl.getColumns() {
-				_, found := usingCols[strings.ToLower(col.Name)]
-				if found {
-					tblName, err := tbl.Name()
-					if err != nil {
-						return err
-					}
-
-					foundTables = append(foundTables, tblName)
-					break // no need to look at other columns in this table
-				}
-			}
+func rewriteOrFalse(orExpr sqlparser.OrExpr) sqlparser.Expr {
+	// we are looking for the pattern `WHERE c = 1 OR 1 = 0`
+	isFalse := func(subExpr sqlparser.Expr) bool {
+		evalEnginePred, err := evalengine.Translate(subExpr, nil)
+		if err != nil {
+			return false
 		}
-		for i, lft := range foundTables {
-			for j := i + 1; j < len(foundTables); j++ {
-				rgt := foundTables[j]
-				predicates = append(predicates, &sqlparser.ComparisonExpr{
-					Operator: sqlparser.EqualOp,
-					Left:     sqlparser.NewColNameWithQualifier(column.String(), lft),
-					Right:    sqlparser.NewColNameWithQualifier(column.String(), rgt),
-				})
-			}
+
+		env := evalengine.EmptyExpressionEnv()
+		res, err := env.Evaluate(evalEnginePred)
+		if err != nil {
+			return false
 		}
+
+		boolValue, err := res.Value().ToBool()
+		if err != nil {
+			return false
+		}
+
+		return !boolValue
 	}
 
-	// now, we go up the scope until we find a SELECT with a where clause we can add this predicate to
-	for current != nil {
-		sel, found := current.stmt.(*sqlparser.Select)
-		if found {
-			if sel.Where == nil {
-				sel.Where = &sqlparser.Where{
-					Type: sqlparser.WhereClause,
-					Expr: sqlparser.AndExpressions(predicates...),
-				}
-			} else {
-				sel.Where.Expr = sqlparser.AndExpressions(append(predicates, sel.Where.Expr)...)
-			}
-			return nil
-		}
-		current = current.parent
+	if isFalse(orExpr.Left) {
+		return orExpr.Right
+	} else if isFalse(orExpr.Right) {
+		return orExpr.Left
 	}
-	return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "did not find WHERE clause")
+
+	return nil
 }
 
-func expandTableColumns(
+// rewriteJoinUsing rewrites SQL JOINs that use the USING clause to their equivalent
+// JOINs with the ON condition. This function finds all the tables that have the
+// specified columns in the USING clause, constructs an equality predicate for
+// each pair of tables, and adds the resulting predicates to the WHERE clause
+// of the outermost SELECT statement.
+//
+// For example, given the query:
+//
+//	SELECT * FROM t1 JOIN t2 USING (col1, col2)
+//
+// The rewriteJoinUsing function will rewrite the query to:
+//
+//	SELECT * FROM t1 JOIN t2 ON (t1.col1 = t2.col1 AND t1.col2 = t2.col2)
+//
+// This function returns an error if it encounters a non-authoritative table or
+// if it cannot find a SELECT statement to add the WHERE predicate to.
+func rewriteJoinUsing(b *binder, join *sqlparser.JoinTableExpr) error {
+	predicates, err := buildJoinPredicates(b, join)
+	if err != nil {
+		return err
+	}
+	if len(predicates) > 0 {
+		join.Condition.On = sqlparser.AndExpressions(predicates...)
+		join.Condition.Using = nil
+	}
+	return nil
+}
+
+// buildJoinPredicates constructs the join predicates for a given set of USING columns.
+// It returns a slice of sqlparser.Expr, each representing a join predicate for the given columns.
+func buildJoinPredicates(b *binder, join *sqlparser.JoinTableExpr) ([]sqlparser.Expr, error) {
+	var predicates []sqlparser.Expr
+
+	for _, column := range join.Condition.Using {
+		foundTables, err := findTablesWithColumn(b, join, column)
+		if err != nil {
+			return nil, err
+		}
+
+		predicates = append(predicates, createComparisonPredicates(column, foundTables)...)
+	}
+
+	return predicates, nil
+}
+
+func findOnlyOneTableInfoThatHasColumn(b *binder, tbl sqlparser.TableExpr, column sqlparser.IdentifierCI) ([]TableInfo, error) {
+	switch tbl := tbl.(type) {
+	case *sqlparser.AliasedTableExpr:
+		ts := b.tc.tableSetFor(tbl)
+		tblInfo := b.tc.Tables[ts.TableOffset()]
+		for _, info := range tblInfo.getColumns() {
+			if column.EqualString(info.Name) {
+				return []TableInfo{tblInfo}, nil
+			}
+		}
+		return nil, nil
+	case *sqlparser.JoinTableExpr:
+		tblInfoR, err := findOnlyOneTableInfoThatHasColumn(b, tbl.RightExpr, column)
+		if err != nil {
+			return nil, err
+		}
+		tblInfoL, err := findOnlyOneTableInfoThatHasColumn(b, tbl.LeftExpr, column)
+		if err != nil {
+			return nil, err
+		}
+
+		return append(tblInfoL, tblInfoR...), nil
+	case *sqlparser.ParenTableExpr:
+		var tblInfo []TableInfo
+		for _, parenTable := range tbl.Exprs {
+			newTblInfo, err := findOnlyOneTableInfoThatHasColumn(b, parenTable, column)
+			if err != nil {
+				return nil, err
+			}
+			if tblInfo != nil && newTblInfo != nil {
+				return nil, vterrors.VT03021(column.String())
+			}
+			if newTblInfo != nil {
+				tblInfo = newTblInfo
+			}
+		}
+		return tblInfo, nil
+	default:
+		panic(fmt.Sprintf("unsupported TableExpr type in JOIN: %T", tbl))
+	}
+}
+
+// findTablesWithColumn finds the tables with the specified column in the current scope.
+func findTablesWithColumn(b *binder, join *sqlparser.JoinTableExpr, column sqlparser.IdentifierCI) ([]sqlparser.TableName, error) {
+	leftTableInfo, err := findOnlyOneTableInfoThatHasColumn(b, join.LeftExpr, column)
+	if err != nil {
+		return nil, err
+	}
+
+	rightTableInfo, err := findOnlyOneTableInfoThatHasColumn(b, join.RightExpr, column)
+	if err != nil {
+		return nil, err
+	}
+
+	if leftTableInfo == nil || rightTableInfo == nil {
+		return nil, ShardedError{Inner: vterrors.VT09015()}
+	}
+	var tableNames []sqlparser.TableName
+	for _, info := range leftTableInfo {
+		nm, err := info.Name()
+		if err != nil {
+			return nil, err
+		}
+		tableNames = append(tableNames, nm)
+	}
+	for _, info := range rightTableInfo {
+		nm, err := info.Name()
+		if err != nil {
+			return nil, err
+		}
+		tableNames = append(tableNames, nm)
+	}
+	return tableNames, nil
+}
+
+// createComparisonPredicates creates a list of comparison predicates between the given column and foundTables.
+func createComparisonPredicates(column sqlparser.IdentifierCI, foundTables []sqlparser.TableName) []sqlparser.Expr {
+	var predicates []sqlparser.Expr
+	for i, lft := range foundTables {
+		for j := i + 1; j < len(foundTables); j++ {
+			rgt := foundTables[j]
+			predicates = append(predicates, createComparisonBetween(column, lft, rgt))
+		}
+	}
+	return predicates
+}
+
+func createComparisonBetween(column sqlparser.IdentifierCI, lft, rgt sqlparser.TableName) *sqlparser.ComparisonExpr {
+	return &sqlparser.ComparisonExpr{
+		Operator: sqlparser.EqualOp,
+		Left:     sqlparser.NewColNameWithQualifier(column.String(), lft),
+		Right:    sqlparser.NewColNameWithQualifier(column.String(), rgt),
+	}
+}
+
+func (r *earlyRewriter) expandTableColumns(
 	starExpr *sqlparser.StarExpr,
 	tables []TableInfo,
 	joinUsing map[TableSet]map[string]TableSet,
@@ -291,6 +456,7 @@ func expandTableColumns(
 	unknownTbl := true
 	var colNames sqlparser.SelectExprs
 	starExpanded := true
+	expandedColumns := map[sqlparser.TableName][]*sqlparser.ColName{}
 	for _, tbl := range tables {
 		if !starExpr.TableName.IsEmpty() && !tbl.matches(starExpr.TableName) {
 			continue
@@ -305,8 +471,9 @@ func expandTableColumns(
 			return false, nil, err
 		}
 
-		withAlias := len(tables) > 1
-		withQualifier := withAlias || !tbl.getExpr().As.IsEmpty()
+		needsQualifier := len(tables) > 1
+		tableAliased := !tbl.getExpr().As.IsEmpty()
+		withQualifier := needsQualifier || tableAliased
 		currTable := tbl.getTableSet(org)
 		usingCols := joinUsing[currTable]
 		if usingCols == nil {
@@ -321,10 +488,23 @@ func expandTableColumns(
 			} else {
 				colName = sqlparser.NewColName(col.Name)
 			}
-			if withAlias {
+			if needsQualifier {
 				alias = sqlparser.NewIdentifierCI(col.Name)
 			}
 			colNames = append(colNames, &sqlparser.AliasedExpr{Expr: colName, As: alias})
+			vt := tbl.GetVindexTable()
+			if vt != nil {
+				keyspace := vt.Keyspace
+				var ks sqlparser.IdentifierCS
+				if keyspace != nil {
+					ks = sqlparser.NewIdentifierCS(keyspace.Name)
+				}
+				tblName := sqlparser.TableName{
+					Name:      tblName.Name,
+					Qualifier: ks,
+				}
+				expandedColumns[tblName] = append(expandedColumns[tblName], colName)
+			}
 		}
 
 		/*
@@ -365,6 +545,9 @@ func expandTableColumns(
 	if unknownTbl {
 		// This will only happen for case when starExpr has qualifier.
 		return false, nil, vterrors.NewErrorf(vtrpcpb.Code_INVALID_ARGUMENT, vterrors.BadDb, "Unknown table '%s'", sqlparser.String(starExpr.TableName))
+	}
+	if starExpanded {
+		r.expandedColumns = expandedColumns
 	}
 	return starExpanded, colNames, nil
 }

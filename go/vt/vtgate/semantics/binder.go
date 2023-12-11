@@ -21,9 +21,7 @@ import (
 
 	"vitess.io/vitess/go/vt/vtgate/engine"
 
-	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/sqlparser"
-	"vitess.io/vitess/go/vt/vterrors"
 )
 
 // binder is responsible for finding all the column references in
@@ -83,13 +81,6 @@ func (b *binder) up(cursor *sqlparser.Cursor) error {
 			}
 			currScope.joinUsing[ident.Lowered()] = deps.direct
 		}
-		if len(node.Using) > 0 {
-			err := rewriteJoinUsing(currScope, node.Using, b.org)
-			if err != nil {
-				return err
-			}
-			node.Using = nil
-		}
 	case *sqlparser.ColName:
 		currentScope := b.scoper.currentScope()
 		deps, err := b.resolveColumn(node, currentScope, false)
@@ -126,7 +117,7 @@ func (b *binder) bindCountStar(node *sqlparser.CountStar) {
 		switch tbl := tbl.(type) {
 		case *vTableInfo:
 			for _, col := range tbl.cols {
-				if sqlparser.EqualsExpr(node, col) {
+				if sqlparser.Equals.Expr(node, col) {
 					ts = ts.Merge(b.recursive[col])
 				}
 			}
@@ -145,7 +136,7 @@ func (b *binder) bindCountStar(node *sqlparser.CountStar) {
 func (b *binder) rewriteJoinUsingColName(deps dependency, node *sqlparser.ColName, currentScope *scope) (dependency, error) {
 	constituents := deps.recursive.Constituents()
 	if len(constituents) < 1 {
-		return dependency{}, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "not expected - we should not a colname that depends on nothing")
+		return dependency{}, NewError(Buggy, "we should not have a *ColName that depends on nothing")
 	}
 	newTbl := constituents[0]
 	infoFor, err := b.tc.tableInfoFor(newTbl)
@@ -207,7 +198,7 @@ func (b *binder) setSubQueryDependencies(subq *sqlparser.Subquery, currScope *sc
 
 func (b *binder) createExtractedSubquery(cursor *sqlparser.Cursor, currScope *scope, subq *sqlparser.Subquery) (*sqlparser.ExtractedSubquery, error) {
 	if currScope.stmt == nil {
-		return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "[BUG] unable to bind subquery to select statement")
+		return nil, NewError(Buggy, "unable to bind subquery to select statement")
 	}
 
 	sq := &sqlparser.ExtractedSubquery{
@@ -260,7 +251,7 @@ func (b *binder) resolveColumn(colName *sqlparser.ColName, current *scope, allow
 		}
 		current = current.parent
 	}
-	return dependency{}, ShardedError{Inner: vterrors.NewErrorf(vtrpcpb.Code_INVALID_ARGUMENT, vterrors.BadFieldError, "symbol %s not found", sqlparser.String(colName))}
+	return dependency{}, ShardedError{Inner: NewError(ColumnNotFound, colName)}
 }
 
 func (b *binder) resolveColumnInScope(current *scope, expr *sqlparser.ColName, allowMulti bool) (dependencies, error) {
@@ -277,16 +268,14 @@ func (b *binder) resolveColumnInScope(current *scope, expr *sqlparser.ColName, a
 	}
 	if deps, isUncertain := deps.(*uncertain); isUncertain && deps.fail {
 		// if we have a failure from uncertain, we matched the column to multiple non-authoritative tables
-		return nil, ProjError{
-			Inner: vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "Column '%s' in field list is ambiguous", sqlparser.String(expr)),
-		}
+		return nil, ProjError{Inner: NewError(AmbiguousColumn, expr)}
 	}
 	return deps, nil
 }
 
 func makeAmbiguousError(colName *sqlparser.ColName, err error) error {
 	if err == ambigousErr {
-		err = vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "Column '%s' in field list is ambiguous", sqlparser.String(colName))
+		err = NewError(AmbiguousColumn, colName)
 	}
 	return err
 }
