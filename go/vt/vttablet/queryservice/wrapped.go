@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/vterrors"
 
 	binlogdatapb "vitess.io/vitess/go/vt/proto/binlogdata"
@@ -177,6 +178,9 @@ func (ws *wrappedService) ReadTransaction(ctx context.Context, target *querypb.T
 }
 
 func (ws *wrappedService) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]*querypb.BindVariable, transactionID, reservedID int64, options *querypb.ExecuteOptions) (qr *sqltypes.Result, err error) {
+	span, ctx := trace.NewSpan(ctx, "wrappedService.Execute")
+	defer span.Finish()
+
 	inDedicatedConn := transactionID != 0 || reservedID != 0
 	err = ws.wrapper(ctx, target, ws.impl, "Execute", inDedicatedConn, func(ctx context.Context, target *querypb.Target, conn QueryService) (bool, error) {
 		var innerErr error

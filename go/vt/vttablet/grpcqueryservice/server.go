@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/callerid"
 	"vitess.io/vitess/go/vt/callinfo"
 	"vitess.io/vitess/go/vt/vterrors"
@@ -43,6 +44,9 @@ var _ queryservicepb.QueryServer = (*query)(nil)
 
 // Execute is part of the queryservice.QueryServer interface
 func (q *query) Execute(ctx context.Context, request *querypb.ExecuteRequest) (response *querypb.ExecuteResponse, err error) {
+	span, ctx := trace.NewSpan(ctx, "query.Execute")
+	defer span.Finish()
+
 	defer q.server.HandlePanic(&err)
 	ctx = callerid.NewContext(callinfo.GRPCCallInfo(ctx),
 		request.EffectiveCallerId,
