@@ -212,15 +212,19 @@ func (vr *VindexLookup) executeNonBatch(ctx context.Context, vcursor VCursor, id
 func (vr *VindexLookup) executeBatch(ctx context.Context, vcursor VCursor, ids []sqltypes.Value) ([]*sqltypes.Result, error) {
 	results := make([]*sqltypes.Result, 0, len(ids))
 	// for integral types, batch query all ids and then map them back to the input order
-	vars, err := sqltypes.BuildBindVariable(ids)
-	if err != nil {
-		return nil, err
+	var idVars = make(map[string]*querypb.BindVariable, len(ids))
+	for _, id := range ids {
+		idVars[id.ToString()] = sqltypes.ValueBindVariable(id)
 	}
-	bindVars := map[string]*querypb.BindVariable{
-		vr.Arguments[0]: vars,
+
+	var bindVars = make(map[string]*querypb.BindVariable, len(vr.Arguments))
+
+	for _, arg := range vr.Arguments {
+		bindVars[arg] = idVars[arg]
 	}
 
 	var result *sqltypes.Result
+	var err error
 	if vr.Vindex.AutoCommitEnabled() {
 		result, err = vcursor.ExecutePrimitiveStandalone(ctx, vr.Lookup, bindVars, false)
 	} else {
