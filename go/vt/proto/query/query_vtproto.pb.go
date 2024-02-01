@@ -1370,6 +1370,11 @@ func (m *RealtimeStats) CloneVT() *RealtimeStats {
 		copy(tmpContainer, rhs)
 		r.ViewSchemaChanged = tmpContainer
 	}
+	if rhs := m.QueryTimeoutCounts; rhs != nil {
+		tmpContainer := make([]int32, len(rhs))
+		copy(tmpContainer, rhs)
+		r.QueryTimeoutCounts = tmpContainer
+	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -5344,6 +5349,27 @@ func (m *RealtimeStats) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.QueryTimeoutCounts) > 0 {
+		var pksize2 int
+		for _, num := range m.QueryTimeoutCounts {
+			pksize2 += sov(uint64(num))
+		}
+		i -= pksize2
+		j1 := i
+		for _, num1 := range m.QueryTimeoutCounts {
+			num := uint64(num1)
+			for num >= 1<<7 {
+				dAtA[j1] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j1++
+			}
+			dAtA[j1] = uint8(num)
+			j1++
+		}
+		i = encodeVarint(dAtA, i, uint64(pksize2))
+		i--
+		dAtA[i] = 0x4a
+	}
 	if len(m.ViewSchemaChanged) > 0 {
 		for iNdEx := len(m.ViewSchemaChanged) - 1; iNdEx >= 0; iNdEx-- {
 			i -= len(m.ViewSchemaChanged[iNdEx])
@@ -7229,6 +7255,13 @@ func (m *RealtimeStats) SizeVT() (n int) {
 			l = len(s)
 			n += 1 + l + sov(uint64(l))
 		}
+	}
+	if len(m.QueryTimeoutCounts) > 0 {
+		l = 0
+		for _, e := range m.QueryTimeoutCounts {
+			l += sov(uint64(e))
+		}
+		n += 1 + sov(uint64(l)) + l
 	}
 	n += len(m.unknownFields)
 	return n
@@ -17524,6 +17557,82 @@ func (m *RealtimeStats) UnmarshalVT(dAtA []byte) error {
 			}
 			m.ViewSchemaChanged = append(m.ViewSchemaChanged, string(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
+		case 9:
+			if wireType == 0 {
+				var v int32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.QueryTimeoutCounts = append(m.QueryTimeoutCounts, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLength
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLength
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.QueryTimeoutCounts) == 0 {
+					m.QueryTimeoutCounts = make([]int32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v int32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflow
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= int32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.QueryTimeoutCounts = append(m.QueryTimeoutCounts, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field QueryTimeoutCounts", wireType)
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skip(dAtA[iNdEx:])

@@ -175,7 +175,9 @@ func (rt *Rates) Get() (rateMap map[string][]float64) {
 				rateMap[k][i-1] = 0
 				continue
 			}
-			elapsed := float64((timeStamps[i] - timeStamps[i-1]) / 1e9)
+			t := time.Unix(timeStamps[i]/1e9, timeStamps[i]%1e9)
+			tPrev := time.Unix(timeStamps[i-1]/1e9, timeStamps[i-1]%1e9)
+			elapsed := t.Sub(tPrev).Seconds()
 			rateMap[k][i-1] = float64(values[valueIndex]-values[valueIndex-1]) / elapsed
 			valueIndex--
 		}
