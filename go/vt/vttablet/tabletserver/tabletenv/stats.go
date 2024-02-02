@@ -49,8 +49,8 @@ type Stats struct {
 	UserReservedTimesNs     *stats.CountersWithSingleLabel // Per CallerID reserved connection duration
 
 	QueryTimingsByTabletType *servenv.TimingsWrapper // Query timings split by current tablet type
-	TimeoutErrorRates        *stats.Rates
-	TimeoutErrorCount        *stats.CountersWithSingleLabel
+	QueryTimeoutTimings      *servenv.TimingsWrapper
+	QueryTimeoutRates        *stats.Rates
 }
 
 // NewStats instantiates a new set of stats scoped by exporter.
@@ -100,10 +100,10 @@ func NewStats(exporter *servenv.Exporter) *Stats {
 		UserReservedTimesNs:     exporter.NewCountersWithSingleLabel("UserReservedTimesNs", "Total reserved connection latency for each CallerID", "CallerID"),
 
 		QueryTimingsByTabletType: exporter.NewTimings("QueryTimingsByTabletType", "Query timings broken down by active tablet type", "TabletType"),
-		TimeoutErrorCount:        exporter.NewCountersWithSingleLabel("TimeoutErrorCount", "timeout error counts by error code", "Code"),
+		QueryTimeoutTimings:      exporter.NewTimings("QueryTimeoutTimings", "Query timeout timing by vtrpc error code", "Code"),
 	}
 	stats.QPSRates = exporter.NewRates("QPS", stats.QueryTimings, 15*60/5, 5*time.Second)
-	stats.TimeoutErrorRates = exporter.NewRates("TimeoutErrorRate", stats.TimeoutErrorCount, 60, 1*time.Second)
+	stats.QueryTimeoutRates = exporter.NewRates("QueryTimeoutRates", stats.QueryTimeoutTimings, 60, 1*time.Second)
 	return stats
 }
 

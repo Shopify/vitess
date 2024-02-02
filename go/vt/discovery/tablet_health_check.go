@@ -168,6 +168,8 @@ func (thc *tabletHealthCheck) processResponse(hc *HealthCheckImpl, shr *query.St
 		return fmt.Errorf("health stats is not valid: %v", shr)
 	}
 
+	log.Infof("received StreamHealthResponse from tablet %v with QueryTimeoutRates: %v", shr.TabletAlias, shr.RealtimeStats.QueryTimeoutRates)
+
 	// an app-level error from tablet, force serving state.
 	var healthErr error
 	serving := shr.Serving

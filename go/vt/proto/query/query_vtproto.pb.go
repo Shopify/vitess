@@ -1370,10 +1370,10 @@ func (m *RealtimeStats) CloneVT() *RealtimeStats {
 		copy(tmpContainer, rhs)
 		r.ViewSchemaChanged = tmpContainer
 	}
-	if rhs := m.QueryTimeoutCounts; rhs != nil {
-		tmpContainer := make([]int32, len(rhs))
+	if rhs := m.QueryTimeoutRates; rhs != nil {
+		tmpContainer := make([]float64, len(rhs))
 		copy(tmpContainer, rhs)
-		r.QueryTimeoutCounts = tmpContainer
+		r.QueryTimeoutRates = tmpContainer
 	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
@@ -5349,24 +5349,13 @@ func (m *RealtimeStats) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if len(m.QueryTimeoutCounts) > 0 {
-		var pksize2 int
-		for _, num := range m.QueryTimeoutCounts {
-			pksize2 += sov(uint64(num))
+	if len(m.QueryTimeoutRates) > 0 {
+		for iNdEx := len(m.QueryTimeoutRates) - 1; iNdEx >= 0; iNdEx-- {
+			f1 := math.Float64bits(float64(m.QueryTimeoutRates[iNdEx]))
+			i -= 8
+			binary.LittleEndian.PutUint64(dAtA[i:], uint64(f1))
 		}
-		i -= pksize2
-		j1 := i
-		for _, num1 := range m.QueryTimeoutCounts {
-			num := uint64(num1)
-			for num >= 1<<7 {
-				dAtA[j1] = uint8(uint64(num)&0x7f | 0x80)
-				num >>= 7
-				j1++
-			}
-			dAtA[j1] = uint8(num)
-			j1++
-		}
-		i = encodeVarint(dAtA, i, uint64(pksize2))
+		i = encodeVarint(dAtA, i, uint64(len(m.QueryTimeoutRates)*8))
 		i--
 		dAtA[i] = 0x4a
 	}
@@ -7256,12 +7245,8 @@ func (m *RealtimeStats) SizeVT() (n int) {
 			n += 1 + l + sov(uint64(l))
 		}
 	}
-	if len(m.QueryTimeoutCounts) > 0 {
-		l = 0
-		for _, e := range m.QueryTimeoutCounts {
-			l += sov(uint64(e))
-		}
-		n += 1 + sov(uint64(l)) + l
+	if len(m.QueryTimeoutRates) > 0 {
+		n += 1 + sov(uint64(len(m.QueryTimeoutRates)*8)) + len(m.QueryTimeoutRates)*8
 	}
 	n += len(m.unknownFields)
 	return n
@@ -17558,23 +17543,15 @@ func (m *RealtimeStats) UnmarshalVT(dAtA []byte) error {
 			m.ViewSchemaChanged = append(m.ViewSchemaChanged, string(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		case 9:
-			if wireType == 0 {
-				var v int32
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					v |= int32(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
+			if wireType == 1 {
+				var v uint64
+				if (iNdEx + 8) > l {
+					return io.ErrUnexpectedEOF
 				}
-				m.QueryTimeoutCounts = append(m.QueryTimeoutCounts, v)
+				v = uint64(binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+				iNdEx += 8
+				v2 := float64(math.Float64frombits(v))
+				m.QueryTimeoutRates = append(m.QueryTimeoutRates, v2)
 			} else if wireType == 2 {
 				var packedLen int
 				for shift := uint(0); ; shift += 7 {
@@ -17602,36 +17579,22 @@ func (m *RealtimeStats) UnmarshalVT(dAtA []byte) error {
 					return io.ErrUnexpectedEOF
 				}
 				var elementCount int
-				var count int
-				for _, integer := range dAtA[iNdEx:postIndex] {
-					if integer < 128 {
-						count++
-					}
-				}
-				elementCount = count
-				if elementCount != 0 && len(m.QueryTimeoutCounts) == 0 {
-					m.QueryTimeoutCounts = make([]int32, 0, elementCount)
+				elementCount = packedLen / 8
+				if elementCount != 0 && len(m.QueryTimeoutRates) == 0 {
+					m.QueryTimeoutRates = make([]float64, 0, elementCount)
 				}
 				for iNdEx < postIndex {
-					var v int32
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return ErrIntOverflow
-						}
-						if iNdEx >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := dAtA[iNdEx]
-						iNdEx++
-						v |= int32(b&0x7F) << shift
-						if b < 0x80 {
-							break
-						}
+					var v uint64
+					if (iNdEx + 8) > l {
+						return io.ErrUnexpectedEOF
 					}
-					m.QueryTimeoutCounts = append(m.QueryTimeoutCounts, v)
+					v = uint64(binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+					iNdEx += 8
+					v2 := float64(math.Float64frombits(v))
+					m.QueryTimeoutRates = append(m.QueryTimeoutRates, v2)
 				}
 			} else {
-				return fmt.Errorf("proto: wrong wireType = %d for field QueryTimeoutCounts", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field QueryTimeoutRates", wireType)
 			}
 		default:
 			iNdEx = preIndex

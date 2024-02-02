@@ -224,6 +224,7 @@ func (hs *healthStreamer) ChangeState(tabletType topodatapb.TabletType, ptsTimes
 
 	hs.state.RealtimeStats.FilteredReplicationLagSeconds, hs.state.RealtimeStats.BinlogPlayersCount = blpFunc()
 	hs.state.RealtimeStats.Qps = hs.stats.QPSRates.TotalRate()
+	hs.state.RealtimeStats.QueryTimeoutRates = hs.stats.QueryTimeoutRates.Get()["All"]
 	shr := hs.state.CloneVT()
 	hs.broadCastToClients(shr)
 	hs.history.Add(&historyRecord{

@@ -144,7 +144,7 @@ func (qre *QueryExecutor) Execute() (reply *sqltypes.Result, err error) {
 			qre.tsv.qe.AddStats(qre.plan.PlanID, tableName, qre.options.GetWorkloadName(), qre.targetTabletType, 1, duration, mysqlTime, 0, 0, 1, errCode)
 			qre.plan.AddStats(1, duration, mysqlTime, 0, 0, 1)
 			if isTimeoutError(vtErrorCode) {
-				qre.tsv.stats.TimeoutErrorCount.Add(errCode, 1)
+				qre.tsv.stats.QueryTimeoutTimings.Add(errCode, duration)
 			}
 			return
 		}
