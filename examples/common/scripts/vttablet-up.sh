@@ -45,7 +45,7 @@ vttablet \
  --init_keyspace $keyspace \
  --init_shard $shard \
  --init_tablet_type $tablet_type \
- --health_check_interval 5s \
+ --health_check_interval 1s \
  --backup_storage_implementation file \
  --file_backup_storage_root $VTDATAROOT/backups \
  --restore_from_backup \

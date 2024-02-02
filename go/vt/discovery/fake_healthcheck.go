@@ -90,6 +90,19 @@ func (fhc *FakeHealthCheck) GetHealthyTabletStats(target *querypb.Target) []*Tab
 	return result
 }
 
+// GetTabletStats returns all the tablets
+func (fhc *FakeHealthCheck) GetTabletStats(target *querypb.Target) []*TabletHealth {
+	result := make([]*TabletHealth, 0)
+	fhc.mu.Lock()
+	defer fhc.mu.Unlock()
+	for _, item := range fhc.items {
+		if proto.Equal(item.ts.Target, target) {
+			result = append(result, item.ts)
+		}
+	}
+	return result
+}
+
 // GetTabletHealthByAlias results the TabletHealth of the tablet that matches the given alias
 func (fhc *FakeHealthCheck) GetTabletHealthByAlias(alias *topodatapb.TabletAlias) (*TabletHealth, error) {
 	return fhc.GetTabletHealth("", alias)

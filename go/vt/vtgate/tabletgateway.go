@@ -290,9 +290,16 @@ func (gw *TabletGateway) withRetry(ctx context.Context, target *querypb.Target, 
 					err = vterrors.Errorf(vtrpcpb.Code_CLUSTER_EVENT, buffer.ClusterEventReparentInProgress)
 					continue
 				}
-				// if primary is serving, but we initially found no tablet, we're in an inconsistent state
-				// we then retry the entire loop
 				if primary != nil {
+					thList := gw.hc.GetTabletStats(target)
+					if len(thList) == 1 && thList[0].CircuitState == discovery.CircuitBreakerState_OPEN {
+						// fail fast with a specific error message
+						err = vterrors.Errorf(vtrpcpb.Code_UNAVAILABLE, "circuit breaker is open for '%s'", target.String())
+						break
+					}
+
+					// if primary is serving, but we initially found no tablet, we're in an inconsistent state
+					// we then retry the entire loop
 					err = vterrors.Errorf(vtrpcpb.Code_UNAVAILABLE, "inconsistent state detected, primary is serving but initially found no available tablet")
 					continue
 				}

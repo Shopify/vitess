@@ -222,6 +222,12 @@ type HealthCheck interface {
 	// synchronization
 	GetHealthyTabletStats(target *query.Target) []*TabletHealth
 
+	// GetTabletStats returns all tablets for the given target.
+	// The returned array is owned by the caller.
+	// For TabletType_PRIMARY, this will only return at most one entry,
+	// the most recent tablet of type primary.
+	GetTabletStats(target *query.Target) []*TabletHealth
+
 	// GetTabletHealth results the TabletHealth of the tablet that matches the given alias
 	GetTabletHealth(kst KeyspaceShardTabletType, alias *topodata.TabletAlias) (*TabletHealth, error)
 
@@ -560,6 +566,17 @@ func (hc *HealthCheckImpl) updateHealth(th *TabletHealth, prevTarget *query.Targ
 		}
 	}
 
+	// We recompute the circuit breaker health whenever we get a health update
+	// We want this to happen for primary tablets as well, hence why we're not including it in `recomputeHealthy`
+	if hc.isIncluded(th.Target.TabletType, th.Tablet.Alias) {
+		hc.recomputeCircuitBreakerHealth(targetKey)
+	}
+	// Not sure if this is necessary
+	if targetChanged && hc.isIncluded(th.Target.TabletType, th.Tablet.Alias) {
+		oldTargetKey := KeyFromTarget(prevTarget)
+		hc.recomputeCircuitBreakerHealth(oldTargetKey)
+	}
+
 	isNewPrimary := isPrimary && prevTarget.TabletType != topodata.TabletType_PRIMARY
 	if isNewPrimary {
 		log.Errorf("Adding 1 to PrimaryPromoted counter for target: %v, tablet: %v, tabletType: %v", prevTarget, topoproto.TabletAliasString(th.Tablet.Alias), th.Target.TabletType)
@@ -580,6 +597,18 @@ func (hc *HealthCheckImpl) recomputeHealthy(key KeyspaceShardTabletType) {
 		}
 	}
 	hc.healthy[key] = FilterStatsByReplicationLag(allArray)
+}
+
+func (hc *HealthCheckImpl) recomputeCircuitBreakerHealth(key KeyspaceShardTabletType) {
+	all := hc.healthData[key]
+	allArray := make([]*TabletHealth, 0, len(all))
+	for _, s := range all {
+		// Only tablets in same cell / cellAlias are included in healthy list.
+		if hc.isIncluded(s.Tablet.Type, s.Tablet.Alias) {
+			allArray = append(allArray, s)
+		}
+	}
+	hc.healthy[key] = FilterStatsByCircuitBreakerState(allArray)
 }
 
 // Subscribe adds a listener. Used by vtgate buffer to learn about primary changes.

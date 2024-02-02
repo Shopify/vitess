@@ -40,6 +40,7 @@ type TabletHealth struct {
 	PrimaryTermStartTime int64
 	LastError            error
 	Serving              bool
+	CircuitState         CircuitBreakerState
 }
 
 func (th *TabletHealth) MarshalJSON() ([]byte, error) {
