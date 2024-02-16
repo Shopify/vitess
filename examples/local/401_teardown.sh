@@ -19,7 +19,7 @@
 
 source ./env.sh
 
-./scripts/vtadmin-down.sh
+#./scripts/vtadmin-down.sh
 
 ./scripts/vtorc-down.sh
 

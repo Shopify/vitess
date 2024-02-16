@@ -110,6 +110,7 @@ type (
 
 		reopenMutex sync.Mutex
 		refresh     *poolRefresh
+		verbose     sync2.AtomicBool
 	}
 )
 
@@ -178,6 +179,10 @@ func NewResourcePool(factory Factory, capacity, maxCap int, idleTimeout time.Dur
 	rp.refresh.startRefreshTicker()
 
 	return rp
+}
+
+func (rp *ResourcePool) Verbose(v bool) {
+	rp.verbose.Set(v)
 }
 
 func (rp *ResourcePool) Name() string {
@@ -263,6 +268,7 @@ func (rp *ResourcePool) Get(ctx context.Context, setting *Setting) (resource Res
 }
 
 func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) {
+	rp.verboseInfo("AYO getting a resource without settings")
 	rp.getCount.Add(1)
 	// Fetch
 	var wrapper resourceWrapper
@@ -274,19 +280,24 @@ func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) 
 	// check normal resources first
 	case wrapper, ok = <-rp.resources:
 	default:
+		rp.verboseInfo("AYO nothing in rp.resources")
 		select {
 		// then checking setting resources
 		case wrapper, ok = <-rp.settingResources:
 		default:
+			rp.verboseInfo("AYO nothing in rp.settingResources")
+			rp.verboseInfo("AYO waiting for a resource")
 			// now waiting
 			startTime := time.Now()
 			select {
 			case wrapper, ok = <-rp.resources:
 			case wrapper, ok = <-rp.settingResources:
 			case <-ctx.Done():
+				rp.verboseError("AYO timed out waiting for a resource")
 				return nil, ErrTimeout
 			}
 			rp.recordWait(startTime)
+			rp.verboseInfo("AYO got a resource after waiting")
 		}
 	}
 	if !ok {
@@ -295,6 +306,7 @@ func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) 
 
 	// if the resource has setting applied, we will close it and return a new one
 	if wrapper.resource != nil && wrapper.resource.IsSettingApplied() {
+		rp.verboseInfo("AYO got a resource with settings applied. Gonna reset it.")
 		rp.resetSettingCount.Add(1)
 		err = wrapper.resource.ResetSetting(ctx)
 		if err != nil {
@@ -307,18 +319,36 @@ func (rp *ResourcePool) get(ctx context.Context) (resource Resource, err error) 
 
 	// Unwrap
 	if wrapper.resource == nil {
+		rp.verboseInfo("AYO gonna create a new resource.")
 		wrapper.resource, err = rp.factory(ctx)
 		if err != nil {
 			rp.resources <- resourceWrapper{}
+			rp.verboseError("AYO error creating resource: %s", err)
 			return nil, err
 		}
+		rp.verboseInfo("AYO created a resource")
 		rp.active.Add(1)
 	}
+
+	rp.verboseInfo("AYO got a resource now (from pool or just created)")
+
 	if rp.available.Add(-1) <= 0 {
 		rp.exhausted.Add(1)
 	}
 	rp.inUse.Add(1)
 	return wrapper.resource, err
+}
+
+func (rp *ResourcePool) verboseInfo(format string, args ...interface{}) {
+	if rp.verbose.Get() {
+		log.Infof(format, args...)
+	}
+}
+
+func (rp *ResourcePool) verboseError(format string, args ...interface{}) {
+	if rp.verbose.Get() {
+		log.Infof(format, args...)
+	}
 }
 
 func (rp *ResourcePool) getWithSettings(ctx context.Context, setting *Setting) (Resource, error) {

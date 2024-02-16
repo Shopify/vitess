@@ -38,6 +38,7 @@ echo "Starting vttablet for $alias..."
 # shellcheck disable=SC2086
 vttablet \
  $TOPOLOGY_FLAGS \
+ --alsologtostderr \
  --log_dir $VTDATAROOT/tmp \
  --log_queries_to_file $VTDATAROOT/tmp/$tablet_logfile \
  --tablet-path $alias \
@@ -55,6 +56,17 @@ vttablet \
  --service_map 'grpc-queryservice,grpc-tabletmanager,grpc-updatestream' \
  --pid_file $VTDATAROOT/$tablet_dir/vttablet.pid \
  --vtctld_addr http://$hostname:$vtctld_web_port/ \
+ --enable_consolidator=false \
+ --enable_consolidator_replicas=false \
+ --queryserver-config-pool-size 100 \
+ --queryserver-config-query-pool-timeout 0.1 \
+ --queryserver-config-query-pool-waiter-cap 100 \
+ --queryserver-config-transaction-cap 100 \
+ --queryserver-config-txpool-timeout 0.1 \
+ --queryserver-config-txpool-waiter-cap 100 \
+ --queryserver-config-stream-pool-size 100 \
+ --queryserver-config-stream-pool-timeout 0.1 \
+ --queryserver-config-stream-pool-waiter-cap 100 \
  --disable_active_reparents \
  > $VTDATAROOT/$tablet_dir/vttablet.out 2>&1 &
 
