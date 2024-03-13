@@ -19,7 +19,7 @@ git fetch --tags origin
 
 target_release=""
 
-latest_major_release=$(git show-ref | grep -E 'refs/remotes/origin/release-[0-9]*\.0$' | sed 's/[a-z0-9]* refs\/remotes\/origin\/release-//' | sed 's/\.0//' | sort -Vr | head -n1)
+latest_major_release=$(git show-ref --tags | grep -E 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*$' | sed 's/[a-z0-9]* refs\/tags\/v//' | awk -v FS=. '{print $1}' | sort -Vr | head -n1)
 major_release=$(cat ./go/vt/servenv/version.go| grep versionName | awk -v 'FS= ' '{print $4}' | tr -d '"' | sed 's/\..*//')
 target_major_release=$((major_release+1))
 
