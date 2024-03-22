@@ -82,6 +82,29 @@ mysql57)
         percona-xtrabackup-24
     )
     ;;
+mysql80-bullseye)
+    mysql8_version=8.0.30
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-common_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-common_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/libmysqlclient21_${mysql8_version}-1debian11_amd64.deb /tmp/libmysqlclient21_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-community-client-core_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-community-client-core_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-community-client-plugins_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-community-client-plugins_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-community-client_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-community-client_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-client_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-client_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-community-server-core_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-community-server-core_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-community-server_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-community-server_${mysql8_version}-1debian11_amd64.deb
+    do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/mysql-server_${mysql8_version}-1debian11_amd64.deb /tmp/mysql-server_${mysql8_version}-1debian11_amd64.deb
+    PACKAGES=(
+        /tmp/libmysqlclient21_${mysql8_version}-1debian11_amd64.deb
+        /tmp/mysql-community-client-core_${mysql8_version}-1debian11_amd64.deb
+        /tmp/mysql-community-client-plugins_${mysql8_version}-1debian11_amd64.deb
+        /tmp/mysql-community-client_${mysql8_version}-1debian11_amd64.deb
+        /tmp/mysql-client_${mysql8_version}-1debian11_amd64.deb
+        /tmp/mysql-community-server-core_${mysql8_version}-1debian11_amd64.deb
+        /tmp/mysql-community-server_${mysql8_version}-1debian11_amd64.deb
+        /tmp/mysql-server_${mysql8_version}-1debian11_amd64.deb
+        percona-xtrabackup-80
+    )
+    ;;
 mysql80)
     mysql8_version=8.0.30
     do_fetch https://repo.mysql.com/apt/debian/pool/mysql-8.0/m/mysql-community/libmysqlclient21_${mysql8_version}-1debian10_amd64.deb /tmp/libmysqlclient21_${mysql8_version}-1debian10_amd64.deb
@@ -148,12 +171,18 @@ mysql57)
 mysql80)
     echo 'deb http://repo.mysql.com/apt/debian/ buster mysql-8.0' > /etc/apt/sources.list.d/mysql.list
     ;;
+mysql80-bullseye)
+    echo 'deb http://repo.mysql.com/apt/debian/ bullseye mysql-8.0' > /etc/apt/sources.list.d/mysql.list
+    ;;
 esac
 
 # Add extra apt repositories for Percona Server and/or Percona XtraBackup.
 case "${FLAVOR}" in
 mysql57|mysql80|percona57)
     echo 'deb http://repo.percona.com/apt buster main' > /etc/apt/sources.list.d/percona.list
+    ;;
+mysql80-bullseye)
+    echo 'deb http://repo.percona.com/apt bullseye main' > /etc/apt/sources.list.d/percona.list
     ;;
 percona80)
     echo 'deb http://repo.percona.com/apt buster main' > /etc/apt/sources.list.d/percona.list
