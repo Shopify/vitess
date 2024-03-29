@@ -29,6 +29,7 @@ import (
 	"vitess.io/vitess/go/vt/logutil"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/topo"
+	"vitess.io/vitess/go/vt/topo/faketopo"
 	"vitess.io/vitess/go/vt/topo/memorytopo"
 )
 
@@ -613,4 +614,63 @@ func TestFilterByKeypsaceSkipsIgnoredTablets(t *testing.T) {
 	assert.Empty(t, fhc.GetAllTablets())
 
 	tw.Stop()
+}
+
+func TestGetTabletErrorDoesNotRemoveFromHealthcheck(t *testing.T) {
+	factory := faketopo.NewFakeTopoFactory()
+	// add cell to the factory. This returns a fake connection which we will use to set the get and update errors as we require.
+	fakeConn := factory.AddCell("aa")
+
+	ts := faketopo.NewFakeTopoServer(factory)
+	if err := ts.CreateCellInfo(context.Background(), "aa", &topodatapb.CellInfo{}); err != nil {
+		t.Fatalf("CreateCellInfo failed: %v", err)
+	}
+
+	fhc := NewFakeHealthCheck(nil)
+	topologyWatcherOperations.ZeroAll()
+	counts := topologyWatcherOperations.Counts()
+	tw := NewCellTabletsWatcher(context.Background(), ts, fhc, nil, "aa", 10*time.Minute, true, 5)
+
+	counts = checkOpCounts(t, counts, map[string]int64{})
+	checkChecksum(t, tw, 0)
+
+	// Add a tablet to the topology.
+	tablet := &topodatapb.Tablet{
+		Alias: &topodatapb.TabletAlias{
+			Cell: "aa",
+			Uid:  0,
+		},
+		Hostname: "host1",
+		PortMap: map[string]int32{
+			"vt": 123,
+		},
+		Keyspace: "keyspace",
+		Shard:    "shard",
+	}
+	if err := ts.CreateTablet(context.Background(), tablet); err != nil {
+		t.Fatalf("CreateTablet failed: %v", err)
+	}
+	tw.loadTablets()
+	counts = checkOpCounts(t, counts, map[string]int64{"ListTablets": 1, "GetTablet": 1, "AddTablet": 1})
+	checkChecksum(t, tw, 3238442862)
+
+	// Check the tablet is returned by GetAllTablets().
+	allTablets := fhc.GetAllTablets()
+	key := TabletToMapKey(tablet)
+	if _, ok := allTablets[key]; !ok || len(allTablets) != 1 || !proto.Equal(allTablets[key], tablet) {
+		t.Errorf("fhc.GetAllTablets() = %+v; want %+v", allTablets, tablet)
+	}
+
+	// Force the next topo Get call to return an error (the ListDir call for the tablet aliases will still succeed)
+	fakeConn.AddGetError(true)
+
+	tw.loadTablets()
+	checkOpCounts(t, counts, map[string]int64{"ListTablets": 1, "GetTablet": 1})
+	checkChecksum(t, tw, 3238442862)
+
+	// Check the tablet is still returned by GetAllTablets().
+	allTablets2 := fhc.GetAllTablets()
+	if _, ok := allTablets2[key]; !ok || len(allTablets2) != 1 || !proto.Equal(allTablets2[key], tablet) {
+		t.Errorf("fhc.GetAllTablets() = %+v; want %+v", allTablets2, tablet)
+	}
 }

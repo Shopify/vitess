@@ -213,6 +213,8 @@ func (tw *TopologyWatcher) loadTablets() {
 	wg.Wait()
 	tw.mu.Lock()
 
+	partialResult := len(tabletAliases) != len(newTablets)
+
 	for alias, newVal := range newTablets {
 		if tw.tabletFilter != nil && !tw.tabletFilter.IsIncluded(newVal.tablet) {
 			continue
@@ -236,14 +238,24 @@ func (tw *TopologyWatcher) loadTablets() {
 		}
 	}
 
-	for _, val := range tw.tablets {
-		if tw.tabletFilter != nil && !tw.tabletFilter.IsIncluded(val.tablet) {
-			continue
+	if partialResult {
+		for _, val := range tw.tablets {
+			if _, ok := newTablets[val.alias]; !ok {
+				// We don't know if the tablet was removed or if we simply failed to fetch it.
+				// We'll assume it was not removed and ensure it remains in the tablet list
+				newTablets[val.alias] = val
+			}
 		}
+	} else {
+		for _, val := range tw.tablets {
+			if tw.tabletFilter != nil && !tw.tabletFilter.IsIncluded(val.tablet) {
+				continue
+			}
 
-		if _, ok := newTablets[val.alias]; !ok {
-			tw.healthcheck.RemoveTablet(val.tablet)
-			topologyWatcherOperations.Add(topologyWatcherOpRemoveTablet, 1)
+			if _, ok := newTablets[val.alias]; !ok {
+				tw.healthcheck.RemoveTablet(val.tablet)
+				topologyWatcherOperations.Add(topologyWatcherOpRemoveTablet, 1)
+			}
 		}
 	}
 	tw.tablets = newTablets
