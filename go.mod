@@ -71,7 +71,6 @@ require (
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.8.1
-	github.com/spyzhov/ajson v0.4.2
 	github.com/stretchr/testify v1.7.1
 	github.com/tchap/go-patricia v2.2.6+incompatible
 	github.com/tebeka/selenium v0.9.9
@@ -118,6 +117,7 @@ require (
 require (
 	github.com/bndr/gotabulate v1.1.2
 	github.com/hashicorp/go-version v1.6.0
+	github.com/spyzhov/ajson v0.8.0
 	golang.org/x/exp v0.0.0-20230811145659-89c5cff77bcb
 	modernc.org/sqlite v1.20.3
 )
@@ -202,3 +202,5 @@ require (
 	modernc.org/token v1.0.1 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.0.3 // indirect
 )
+
+replace github.com/spyzhov/ajson v0.8.0 => github.com/rohit-nayak-ps/ajson v0.7.2-0.20230316112806-97deb03d883c
