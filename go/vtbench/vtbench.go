@@ -19,6 +19,7 @@ package vtbench
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -180,6 +181,7 @@ func (b *Bench) createConns(ctx context.Context) error {
 
 func (b *Bench) getQuery(i int) (string, map[string]*querypb.BindVariable) {
 	query := strings.Replace(b.Query, ":thread", fmt.Sprintf("%d", i), -1)
+	query = strings.Replace(query, ":random_int", fmt.Sprintf("%d", rand.Int()), -1)
 	bindVars := make(map[string]*querypb.BindVariable)
 	return query, bindVars
 }

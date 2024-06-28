@@ -26,7 +26,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"vitess.io/vitess/go/acl"
-	"vitess.io/vitess/go/vt/dbconfigs"
 	"vitess.io/vitess/go/vt/grpccommon"
 	"vitess.io/vitess/go/vt/logutil"
 	"vitess.io/vitess/go/vt/servenv"
@@ -191,14 +190,14 @@ func run(cmd *cobra.Command, args []string) error {
 		return errors.New("vtbench requires either host/port or unix_socket")
 	}
 
-	var password string
-	if clientProto == vtbench.MySQL {
-		var err error
-		_, password, err = dbconfigs.GetCredentialsServer().GetUserAndPassword(user)
-		if err != nil {
-			return fmt.Errorf("error reading password for user %v from file: %w", user, err)
-		}
-	}
+	//var password string
+	//if clientProto == vtbench.MySQL {
+	//	var err error
+	//	_, password, err = dbconfigs.GetCredentialsServer().GetUserAndPassword(user)
+	//	if err != nil {
+	//		return fmt.Errorf("error reading password for user %v from file: %w", user, err)
+	//	}
+	//}
 
 	connParams := vtbench.ConnParams{
 		Hosts:      strings.Split(host, ","),
@@ -206,8 +205,8 @@ func run(cmd *cobra.Command, args []string) error {
 		UnixSocket: unixSocket,
 		Protocol:   clientProto,
 		DB:         db,
-		Username:   user,
-		Password:   password,
+		//Username:   user,
+		//Password:   password,
 	}
 
 	b := vtbench.NewBench(threads, count, connParams, sql)

@@ -84,3 +84,4 @@ if [[ -n ${BASH} ]]; then
     shopt -s expand_aliases
 fi
 
+export GOMAXPROCS=2
