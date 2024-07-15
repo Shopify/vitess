@@ -319,8 +319,8 @@ type TabletConfig struct {
 	ConsolidatorStreamQuerySize      int64         `json:"consolidatorStreamQuerySize,omitempty"`
 	QueryCacheMemory                 int64         `json:"queryCacheMemory,omitempty"`
 	QueryCacheDoorkeeper             bool          `json:"queryCacheDoorkeeper,omitempty"`
-	SchemaReloadInterval             time.Duration `json:"schemaReloadIntervalSeconds,omitempty"`
-	SignalSchemaChangeReloadInterval time.Duration `json:"signalSchemaChangeReloadIntervalSeconds,omitempty"`
+	SchemaReloadInterval             time.Duration `json:"schemaReloadInterval,omitempty"`
+	SignalSchemaChangeReloadInterval time.Duration `json:"signalSchemaChangeReloadInterval,omitempty"`
 	SchemaChangeReloadTimeout        time.Duration `json:"schemaChangeReloadTimeout,omitempty"`
 	WatchReplication                 bool          `json:"watchReplication,omitempty"`
 	TrackSchemaVersions              bool          `json:"trackSchemaVersions,omitempty"`
