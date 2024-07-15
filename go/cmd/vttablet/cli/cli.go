@@ -184,6 +184,10 @@ func initConfig(tabletAlias *topodatapb.TabletAlias, collationEnv *collations.En
 	tabletenv.Init()
 	// Load current config after tabletenv.Init, because it changes it.
 	config := tabletenv.NewCurrentConfig()
+
+	configBytes, _ := yaml2.Marshal(config)
+	log.Infof("Config file before unmarshaling: \n%s", configBytes)
+
 	if err := config.Verify(); err != nil {
 		return nil, nil, fmt.Errorf("invalid config: %w", err)
 	}

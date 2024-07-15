@@ -406,7 +406,7 @@ func (se *Engine) reload(ctx context.Context, includeStats bool) error {
 	}
 
 	// add a timeout to prevent unbounded waits
-	log.Info("Reloading timeout: %v", se.reloadTimeout)
+	log.Infof("Reloading timeout: %v", se.reloadTimeout)
 	ctx, cancel := context.WithTimeout(ctx, se.reloadTimeout)
 	defer cancel()
 
