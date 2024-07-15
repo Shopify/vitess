@@ -258,7 +258,7 @@ func (se *Engine) Open() error {
 	se.notifiers = make(map[string]notifier)
 
 	if err := se.reload(ctx, true); err != nil {
-		return err
+		return fmt.Errorf("schema reload failed: %v", err)
 	}
 	if !se.SkipMetaCheck {
 		if err := se.historian.Open(); err != nil {
@@ -406,12 +406,13 @@ func (se *Engine) reload(ctx context.Context, includeStats bool) error {
 	}
 
 	// add a timeout to prevent unbounded waits
+	log.Info("Reloading timeout: %v", se.reloadTimeout)
 	ctx, cancel := context.WithTimeout(ctx, se.reloadTimeout)
 	defer cancel()
 
 	conn, err := se.conns.Get(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get connection to reload: %v", err)
 	}
 	defer conn.Recycle()
 

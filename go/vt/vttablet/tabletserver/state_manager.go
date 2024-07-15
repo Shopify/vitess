@@ -286,12 +286,14 @@ func (sm *stateManager) execTransition(tabletType topodatapb.TabletType, state s
 func (sm *stateManager) retryTransition(message string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+	log.Error(message)
+
 	if sm.retrying {
 		return
 	}
 	sm.retrying = true
 
-	log.Error(message)
+
 	go func() {
 		for {
 			time.Sleep(transitionRetryInterval)
@@ -306,6 +308,7 @@ func (sm *stateManager) recheckState() bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	log.Info("Want: %v, %v, Have: %v, %v", sm.wantTabletType, sm.wantState, sm.target.TabletType, sm.state)
 	if sm.wantState == sm.state && sm.wantTabletType == sm.target.TabletType {
 		sm.retrying = false
 		return true
@@ -547,14 +550,14 @@ func (sm *stateManager) unserveNonPrimary(wantTabletType topodatapb.TabletType) 
 
 func (sm *stateManager) connect(tabletType topodatapb.TabletType) error {
 	if err := sm.se.EnsureConnectionAndDB(tabletType); err != nil {
-		return err
+		return fmt.Errorf("ensure connection and db failed: %v", err)
 	}
 	if err := sm.se.Open(); err != nil {
-		return err
+		return fmt.Errorf("schema engine open failed: %v", err)
 	}
 	sm.vstreamer.Open()
 	if err := sm.qe.Open(); err != nil {
-		return err
+		return fmt.Errorf("query engine open failed: %v", err)
 	}
 	return sm.txThrottler.Open()
 }
