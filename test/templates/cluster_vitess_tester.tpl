@@ -14,7 +14,7 @@ env:
 jobs:
   build:
     name: Run endtoend tests on {{.Name}}
-    runs-on: gh-hosted-runners-4cores-1
+    runs-on: ubuntu-latest
 
     steps:
     - name: Skip CI
@@ -108,7 +108,7 @@ jobs:
 
         # install JUnit report formatter
         go install github.com/vitessio/go-junit-report@HEAD
-        
+
         # install vitess tester
         go install github.com/vitessio/vitess-tester@eb953122baba163ed8ccaa6642458ee984f5d7e4
 
@@ -137,12 +137,12 @@ jobs:
         set -exo pipefail
 
         i=1
-        for dir in {{.Path}}/*/; do 
+        for dir in {{.Path}}/*/; do
           # We go over all the directories in the given path.
           # If there is a vschema file there, we use it, otherwise we let vitess-tester autogenerate it.
           if [ -f $dir/vschema.json ]; then
             vitess-tester --sharded --xunit --test-dir $dir --vschema "$dir"vschema.json
-          else 
+          else
             vitess-tester --sharded --xunit --test-dir $dir
           fi
           # Number the reports by changing their file names.
