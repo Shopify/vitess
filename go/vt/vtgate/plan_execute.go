@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/log"
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
@@ -67,6 +68,7 @@ func (e *Executor) newExecute(
 ) error {
 	// 1: Prepare before planning and execution
 
+	step1Span, ctx := trace.NewSpan(ctx, "newExecute.prepare")
 	// Start an implicit transaction if necessary.
 	err := e.startTxIfNecessary(ctx, safeSession)
 	if err != nil {
@@ -78,8 +80,10 @@ func (e *Executor) newExecute(
 	}
 
 	query, comments := sqlparser.SplitMarginComments(sql)
+	step1Span.Finish()
 
 	// 2: Parse and Validate query
+	step2Span, ctx := trace.NewSpan(ctx, "newExecute.parseAndValidate")
 	stmt, reservedVars, err := parseAndValidateQuery(query, e.env.Parser())
 	if err != nil {
 		return err
@@ -101,6 +105,7 @@ func (e *Executor) newExecute(
 		if err != nil {
 			return err
 		}
+		step2Span.Finish()
 
 		// 3: Create a plan for the query
 		// If we are retrying, it is likely that the routing rules have changed and hence we need to
@@ -111,6 +116,7 @@ func (e *Executor) newExecute(
 		// punt on this and choose not to prematurely optimize since it is not clear how much caching
 		// will help and if it will result in hard-to-track edge cases.
 
+		step3Span, ctx := trace.NewSpan(ctx, "newExecute.getPlan")
 		var plan *engine.Plan
 		plan, err = e.getPlan(ctx, vcursor, query, stmt, comments, bindVars, reservedVars, e.normalize, logStats)
 		execStart := e.logPlanningFinished(logStats, plan)
@@ -137,14 +143,21 @@ func (e *Executor) newExecute(
 			return recResult(plan.Type, result)
 		}
 
+		step3Span.Finish()
+
 		// 4: Prepare for execution
+		step4Span, ctx := trace.NewSpan(ctx, "newExecute.prepareForExecution")
 		err = e.addNeededBindVars(vcursor, plan.BindVarNeeds, bindVars, safeSession)
 		if err != nil {
 			logStats.Error = err
 			return err
 		}
+		step4Span.Finish()
 
 		// 5: Execute the plan and retry if needed
+		step5Span, ctx := trace.NewSpan(ctx, "newExecute.executePlan")
+		defer step5Span.Finish()
+
 		if plan.Instructions.NeedsTransaction() {
 			err = e.insideTransaction(ctx, safeSession, logStats,
 				func() error {
@@ -278,9 +291,13 @@ func (e *Executor) executePlan(
 ) (*sqltypes.Result, error) {
 
 	// 4: Execute!
+	step4Span, ctx := trace.NewSpan(ctx, "executePlan.execute")
 	qr, err := vcursor.ExecutePrimitive(ctx, plan.Instructions, bindVars, true)
+	step4Span.Finish()
 
 	// 5: Log and add statistics
+	step5Span, ctx := trace.NewSpan(ctx, "executePlan.logStats")
+	defer step5Span.Finish()
 	e.setLogStats(logStats, plan, vcursor, execStart, err, qr)
 
 	// Check if there was partial DML execution. If so, rollback the effect of the partially executed query.
