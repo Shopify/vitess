@@ -1,4 +1,6 @@
-FROM --platform=linux/amd64 golang:1.22.5-bullseye
+ARG go_version=1.22.5
+
+FROM golang:${go_version}-bullseye
 
 # Install Vitess build dependencies
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
