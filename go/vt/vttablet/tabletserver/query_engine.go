@@ -385,9 +385,13 @@ func (qe *QueryEngine) GetPlan(ctx context.Context, logStats *tabletenv.LogStats
 	var plan *TabletPlan
 	var err error
 
+	schemaSpan, ctx := trace.NewSpan(ctx, "GetPlan.schemaLoad")
 	curSchema := qe.schema.Load()
+	schemaSpan.Finish()
 
 	if skipQueryPlanCache {
+		getPlanSpan, _ := trace.NewSpan(ctx, "GetPlan.getPlan")
+		defer getPlanSpan.Finish()
 		plan, err = qe.getPlan(curSchema, sql)
 	} else {
 		plan, logStats.CachedPlan, err = qe.plans.GetOrLoad(PlanCacheKey(sql), curSchema.epoch, func() (*TabletPlan, error) {

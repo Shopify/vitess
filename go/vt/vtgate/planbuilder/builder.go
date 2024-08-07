@@ -23,6 +23,7 @@ import (
 
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/test/vschemawrapper"
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/key"
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
@@ -158,10 +159,15 @@ func buildRoutePlan(stmt sqlparser.Statement, reservedVars *sqlparser.ReservedVa
 func createInstructionFor(ctx context.Context, query string, stmt sqlparser.Statement, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema, enableOnlineDDL, enableDirectDDL bool) (*planResult, error) {
 	switch stmt := stmt.(type) {
 	case *sqlparser.Select, *sqlparser.Insert, *sqlparser.Update, *sqlparser.Delete:
+		getSpan, ctx := trace.NewSpan(ctx, "createInstruction.getPlanner")
 		configuredPlanner, err := getConfiguredPlanner(vschema, stmt, query)
 		if err != nil {
 			return nil, err
 		}
+		getSpan.Finish()
+
+		buildRouteSpan, _ := trace.NewSpan(ctx, "createInstruction.buildRoutePlan")
+		defer buildRouteSpan.Finish()
 		return buildRoutePlan(stmt, reservedVars, vschema, configuredPlanner)
 	case *sqlparser.Union:
 		configuredPlanner, err := getConfiguredPlanner(vschema, stmt, query)

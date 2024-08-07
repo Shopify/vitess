@@ -1132,14 +1132,18 @@ func (e *Executor) buildStatement(
 	reservedVars *sqlparser.ReservedVars,
 	bindVarNeeds *sqlparser.BindVarNeeds,
 ) (*engine.Plan, error) {
+	buildSpan, ctx := trace.NewSpan(ctx, "buildStatement.build")
 	plan, err := planbuilder.BuildFromStmt(ctx, query, stmt, reservedVars, vcursor, bindVarNeeds, enableOnlineDDL, enableDirectDDL)
 	if err != nil {
 		return nil, err
 	}
+	buildSpan.Finish()
 
 	plan.Warnings = vcursor.warnings
 	vcursor.warnings = nil
 
+	validSpan, _ := trace.NewSpan(ctx, "buildStatement.valid")
+	defer validSpan.Finish()
 	err = e.checkThatPlanIsValid(stmt, plan)
 	return plan, err
 }
