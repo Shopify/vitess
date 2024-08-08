@@ -92,6 +92,7 @@ func (e *Executor) newExecute(
 	var lastVSchemaCreated time.Time
 	vs := e.VSchema()
 	lastVSchemaCreated = vs.GetCreated()
+	step2Span.Finish()
 	for try := 0; try < MaxBufferingRetries; try++ {
 		if try > 0 && !vs.GetCreated().After(lastVSchemaCreated) {
 			// There is a race due to which the executor's vschema may not have been updated yet.
@@ -105,7 +106,6 @@ func (e *Executor) newExecute(
 		if err != nil {
 			return err
 		}
-		step2Span.Finish()
 
 		// 3: Create a plan for the query
 		// If we are retrying, it is likely that the routing rules have changed and hence we need to

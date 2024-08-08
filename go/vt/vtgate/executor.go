@@ -1084,6 +1084,7 @@ func (e *Executor) getPlan(
 		return nil, err
 	}
 
+	normalSpan, ctx := trace.NewSpan(ctx, "getPlan.normalize")
 	// Normalize if possible
 	shouldNormalize := e.canNormalizeStatement(stmt, setVarComment)
 	parameterize := allowParameterization && shouldNormalize
@@ -1103,6 +1104,7 @@ func (e *Executor) getPlan(
 	if err != nil {
 		return nil, err
 	}
+	normalSpan.Finish()
 	stmt = rewriteASTResult.AST
 	bindVarNeeds := rewriteASTResult.BindVarNeeds
 	if shouldNormalize {

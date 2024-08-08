@@ -379,7 +379,7 @@ func (qe *QueryEngine) getPlan(curSchema *currentSchema, sql string) (*TabletPla
 
 // GetPlan returns the TabletPlan that for the query. Plans are cached in an LRU cache.
 func (qe *QueryEngine) GetPlan(ctx context.Context, logStats *tabletenv.LogStats, sql string, skipQueryPlanCache bool) (*TabletPlan, error) {
-	span, _ := trace.NewSpan(ctx, "QueryEngine.GetPlan")
+	span, ctx := trace.NewSpan(ctx, "QueryEngine.GetPlan")
 	defer span.Finish()
 
 	var plan *TabletPlan
