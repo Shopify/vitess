@@ -25,6 +25,7 @@ import (
 
 	"vitess.io/vitess/go/netutil"
 	"vitess.io/vitess/go/pools/smartconnpool"
+	"vitess.io/vitess/go/stats"
 	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/callerid"
 	"vitess.io/vitess/go/vt/dbconfigs"
@@ -79,6 +80,10 @@ func NewPool(env tabletenv.Env, name string, cfg tabletenv.ConnPoolConfig) *Pool
 		}
 
 		cp.getConnTime = env.Exporter().NewTimings(name+"GetConnTime", "Tracks the amount of time it takes to get a connection", "Settings")
+
+		stats.NewGaugeFunc(name+"Timeout", "Tablet server conn pool waiter timeout (ms)", func() int64 {
+			return cp.timeout.Milliseconds()
+		})
 	}
 
 	cp.ConnPool = smartconnpool.NewPool(&config)
@@ -140,6 +145,15 @@ func (cp *Pool) Get(ctx context.Context, setting *smartconnpool.Setting) (*Poole
 	start := time.Now()
 	conn, err := cp.ConnPool.Get(ctx, setting)
 	if err != nil {
+		switch err {
+		case smartconnpool.ErrTimeout:
+			if cp.timeout != 0 {
+				deadline := start.Add(cp.timeout)
+				if deadline.Before(time.Now()) {
+					cp.ConnPool.Metrics.RecordExpireDelta(deadline)
+				}
+			}
+		}
 		return nil, err
 	}
 	if cp.getConnTime != nil {

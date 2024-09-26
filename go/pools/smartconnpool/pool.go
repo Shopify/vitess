@@ -53,6 +53,30 @@ type Metrics struct {
 	idleClosed           atomic.Int64
 	diffSetting          atomic.Int64
 	resetSetting         atomic.Int64
+	expireFuncTimings    *servenv.TimingsWrapper // duration of waitlist.expire calls
+	expireWaitTimings    *servenv.TimingsWrapper // duration of waiting for a connection that results in expiration
+	expireDeltaTimings   *servenv.TimingsWrapper // duration between desired context expiry and actual expiration
+}
+
+func (m *Metrics) RecordExpireFunc(start time.Time) {
+	// Some pools don't register stats
+	if m.expireFuncTimings != nil {
+		m.expireFuncTimings.Record("ExpireFunc", start)
+	}
+}
+
+func (m *Metrics) RecordExpireWait(start time.Time) {
+	// Some pools don't register stats
+	if m.expireWaitTimings != nil {
+		m.expireWaitTimings.Record("ExpireWait", start)
+	}
+}
+
+func (m *Metrics) RecordExpireDelta(start time.Time) {
+	// Some pools don't register stats
+	if m.expireDeltaTimings != nil {
+		m.expireDeltaTimings.Record("ExpireDelta", start)
+	}
 }
 
 func (m *Metrics) MaxLifetimeClosed() int64 {
@@ -189,13 +213,40 @@ func (pool *ConnPool[C]) runWorker(close <-chan struct{}, interval time.Duration
 	}()
 }
 
+// Copy of runWorker, just exists to give the expire worker goroutine a unique name (based on the function that started it)
+func (pool *ConnPool[C]) runExpireWorker(close <-chan struct{}, interval time.Duration, worker func(now time.Time) bool) {
+	pool.workers.Add(1)
+
+	go func() {
+		tick := time.NewTicker(interval)
+
+		defer tick.Stop()
+		defer pool.workers.Done()
+
+		for {
+			select {
+			case now := <-tick.C:
+				if !worker(now) {
+					return
+				}
+			case <-close:
+				return
+			}
+		}
+	}()
+}
+
 func (pool *ConnPool[C]) open() {
 	pool.close = make(chan struct{})
 	pool.capacity.Store(pool.config.maxCapacity)
 
 	// The expire worker takes care of removing from the waiter list any clients whose
 	// context has been cancelled.
-	pool.runWorker(pool.close, 1*time.Second, func(_ time.Time) bool {
+	pool.runExpireWorker(pool.close, 1*time.Second, func(_ time.Time) bool {
+		funcStart := time.Now()
+		defer func() {
+			pool.Metrics.RecordExpireFunc(funcStart)
+		}()
 		pool.wait.expire(false)
 		return true
 	})
@@ -511,6 +562,7 @@ func (pool *ConnPool[C]) get(ctx context.Context) (*Pooled[C], error) {
 		start := time.Now()
 		conn, err = pool.wait.waitForConn(ctx, nil)
 		if err != nil {
+			pool.Metrics.RecordExpireWait(start)
 			return nil, ErrTimeout
 		}
 		pool.recordWait(start)
@@ -716,6 +768,10 @@ func (pool *ConnPool[C]) RegisterStats(stats *servenv.Exporter, name string) {
 	}
 
 	pool.Name = name
+
+	pool.Metrics.expireFuncTimings = stats.NewTimings(name+"ExpireFuncCalls", "Duration of calls to waitlist.expire", "type")
+	pool.Metrics.expireWaitTimings = stats.NewTimings(name+"ExpireWaits", "Duration of waits that end in pool timeout expired", "type")
+	pool.Metrics.expireDeltaTimings = stats.NewTimings(name+"ExpireWaitsDelta", "Duration between expected context expiry and actual expiry of waits", "type")
 
 	stats.NewGaugeFunc(name+"Capacity", "Tablet server conn pool capacity", func() int64 {
 		return pool.Capacity()
