@@ -622,7 +622,19 @@ func newMysqlUnixSocket(address string, authServer mysql.AuthServer, handler mys
 	}
 }
 
-func (srv *mysqlServer) shutdownMysqlProtocolAndDrain() {
+func (srv *mysqlServer) shutdown(timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// Reserve some time for rollbacks to happen after draining
+	drainCtx, cancel := context.WithTimeout(ctx, timeout-time.Second)
+	defer cancel()
+
+	srv.shutdownMysqlProtocolAndDrain(drainCtx)
+	srv.rollbackAtShutdown(ctx)
+}
+
+func (srv *mysqlServer) shutdownMysqlProtocolAndDrain(ctx context.Context) {
 	if srv.sigChan != nil {
 		signal.Stop(srv.sigChan)
 	}
@@ -637,13 +649,21 @@ func (srv *mysqlServer) shutdownMysqlProtocolAndDrain() {
 		setListenerToNil()
 		// We wait for connected clients to drain by themselves or to run into the onterm timeout
 		log.Infof("Starting drain loop, waiting for all clients to disconnect")
-		reported := time.Now()
+
+		reportTicker := time.NewTicker(2 * time.Second)
+		defer reportTicker.Stop()
+		checkTicker := time.NewTicker(1000 * time.Millisecond)
+		defer checkTicker.Stop()
+
 		for srv.vtgateHandle.numConnections() > 0 {
-			if time.Since(reported) > 2*time.Second {
+			select {
+			case <-ctx.Done():
+				log.Errorf("Timed out waiting for client connections to drain (%d connected)...", srv.vtgateHandle.numConnections())
+				return
+			case <-reportTicker.C:
 				log.Infof("Still waiting for client connections to drain (%d connected)...", srv.vtgateHandle.numConnections())
-				reported = time.Now()
+			case <-checkTicker.C:
 			}
-			time.Sleep(1000 * time.Millisecond)
 		}
 		return
 	}
@@ -653,15 +673,21 @@ func (srv *mysqlServer) shutdownMysqlProtocolAndDrain() {
 	setListenerToNil()
 	if busy := srv.vtgateHandle.busyConnections.Load(); busy > 0 {
 		log.Infof("Waiting for all client connections to be idle (%d active)...", busy)
-		start := time.Now()
-		reported := start
-		for busy > 0 {
-			if time.Since(reported) > 2*time.Second {
-				log.Infof("Still waiting for client connections to be idle (%d active)...", busy)
-				reported = time.Now()
-			}
 
-			time.Sleep(1 * time.Millisecond)
+		reportTicker := time.NewTicker(2 * time.Second)
+		defer reportTicker.Stop()
+		checkTicker := time.NewTicker(1 * time.Millisecond)
+		defer checkTicker.Stop()
+
+		for busy > 0 {
+			select {
+			case <-ctx.Done():
+				log.Errorf("Timed out waiting for client connections to be idle (%d active)...", busy)
+				return
+			case <-reportTicker.C:
+				log.Infof("Still waiting for client connections to be idle (%d active)...", busy)
+			case <-checkTicker.C:
+			}
 			busy = srv.vtgateHandle.busyConnections.Load()
 		}
 	}
@@ -679,7 +705,7 @@ func stopListener(listener *mysql.Listener, shutdown bool) {
 	}
 }
 
-func (srv *mysqlServer) rollbackAtShutdown() {
+func (srv *mysqlServer) rollbackAtShutdown(ctx context.Context) {
 	defer log.Flush()
 	if srv.vtgateHandle == nil {
 		// we still haven't been able to initialise the vtgateHandler, so we don't need to rollback anything
@@ -694,23 +720,24 @@ func (srv *mysqlServer) rollbackAtShutdown() {
 			defer srv.vtgateHandle.mu.Unlock()
 			for id, c := range srv.vtgateHandle.connections {
 				if c != nil {
-					log.Infof("Rolling back transactions associated with connection ID: %v", id)
+					log.Infof("Closing connection and rolling back any open transactions. Connection ID: %v", id)
 					c.Close()
 				}
 			}
 		}
 	}()
 
-	// If vtgate is instead busy executing a query, the number of open conns
-	// will be non-zero. Give another second for those queries to finish.
-	for i := 0; i < 100; i++ {
-		if srv.vtgateHandle.numConnections() == 0 {
-			log.Infof("All connections have been rolled back.")
+	// If vtgate is instead busy executing a query or in a transaction, the number of open conns
+	// will be non-zero. Give some time for those queries to finish.
+	for srv.vtgateHandle.numConnections() > 0 {
+		select {
+		case <-ctx.Done():
+			log.Errorf("All connections did not go idle. Shutting down anyway.")
 			return
+		case <-time.After(10 * time.Millisecond):
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	log.Errorf("All connections did not go idle. Shutting down anyway.")
+	log.Infof("All connections have been closed")
 }
 
 func mysqlSocketPath() string {

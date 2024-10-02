@@ -133,6 +133,10 @@ func GetInitStartTime() time.Time {
 	return initStartTime
 }
 
+func GetOnTermTimeout() time.Duration {
+	return timeouts.OnTermTimeout
+}
+
 func populateListeningURL(port int32) {
 	host, err := netutil.FullyQualifiedHostname()
 	if err != nil {
