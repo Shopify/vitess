@@ -71,6 +71,7 @@ const defaultVtGatePlannerVersion = planbuilder.Gen4
 // Setup starts Vtgate process with required arguements
 func (vtgate *VtgateProcess) Setup() (err error) {
 	args := []string{
+		"--alsologtostderr",
 		"--topo_implementation", vtgate.CommonArg.TopoImplementation,
 		"--topo_global_server_address", vtgate.CommonArg.TopoGlobalAddress,
 		"--topo_global_root", vtgate.CommonArg.TopoGlobalRoot,

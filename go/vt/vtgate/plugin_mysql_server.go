@@ -150,8 +150,10 @@ func (vh *vtgateHandler) ComResetConnection(c *mysql.Conn) {
 }
 
 func (vh *vtgateHandler) ConnectionClosed(c *mysql.Conn) {
+	log.Infof("Connection closed: %d", c.ConnectionID)
 	// Rollback if there is an ongoing transaction. Ignore error.
 	defer func() {
+		log.Infof("Deleting closed connection: %d", c.ConnectionID)
 		vh.mu.Lock()
 		delete(vh.connections, c.ConnectionID)
 		vh.mu.Unlock()
@@ -169,7 +171,10 @@ func (vh *vtgateHandler) ConnectionClosed(c *mysql.Conn) {
 	if session.InTransaction {
 		defer vh.busyConnections.Add(-1)
 	}
-	_ = vh.vtg.CloseSession(ctx, session)
+	err := vh.vtg.CloseSession(ctx, session)
+	if err != nil {
+		log.Errorf("Ignoring error on CloseSession: %s", err)
+	}
 }
 
 // Regexp to extract parent span id over the sql query
@@ -627,7 +632,7 @@ func (srv *mysqlServer) shutdown(timeout time.Duration) {
 	defer cancel()
 
 	// Reserve some time for rollbacks to happen after draining
-	drainCtx, cancel := context.WithTimeout(ctx, timeout-time.Second)
+	drainCtx, cancel := context.WithTimeout(ctx, timeout-(2*time.Second))
 	defer cancel()
 
 	srv.shutdownMysqlProtocolAndDrain(drainCtx)
@@ -712,27 +717,37 @@ func (srv *mysqlServer) rollbackAtShutdown(ctx context.Context) {
 		return
 	}
 
-	// Close all open connections. If they're waiting for reads, this will cause
-	// them to error out, which will automatically rollback open transactions.
+	// Collect all open connections
+	connections := make(map[uint32]*mysql.Conn)
 	func() {
 		if srv.vtgateHandle != nil {
 			srv.vtgateHandle.mu.Lock()
 			defer srv.vtgateHandle.mu.Unlock()
 			for id, c := range srv.vtgateHandle.connections {
 				if c != nil {
-					log.Infof("Closing connection and rolling back any open transactions. Connection ID: %v", id)
-					c.Close()
+					connections[id] = c
 				}
 			}
 		}
 	}()
+
+	// Close all open connections and cancel any inflight queries. This will cause them to error out and automatically
+	// rollback open transactions.
+	//
+	// Doing this without holding a lock on `srv.vtgateHandle` to avoid any potential deadlocks with the
+	// per-connection locks acquired in `c.CancelCtx()`
+	for id, c := range connections {
+		log.Infof("Closing connection and rolling back any open transactions. Connection ID: %v", id)
+		c.Close()
+		c.CancelCtx()
+	}
 
 	// If vtgate is instead busy executing a query or in a transaction, the number of open conns
 	// will be non-zero. Give some time for those queries to finish.
 	for srv.vtgateHandle.numConnections() > 0 {
 		select {
 		case <-ctx.Done():
-			log.Errorf("All connections did not go idle. Shutting down anyway.")
+			log.Errorf("Connections are still open. Shutting down anyway.")
 			return
 		case <-time.After(10 * time.Millisecond):
 		}

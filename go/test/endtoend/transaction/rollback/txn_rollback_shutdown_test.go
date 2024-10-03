@@ -21,8 +21,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
+	"vitess.io/vitess/go/mysql/sqlerror"
 	"vitess.io/vitess/go/test/endtoend/utils"
 
 	"github.com/stretchr/testify/require"
@@ -120,6 +123,68 @@ func TestTransactionRollBackWhenShutDown(t *testing.T) {
 
 }
 
+func TestTransactionRollBackWhenShutDownWithQueryRunning(t *testing.T) {
+	defer cluster.PanicHandler(t)
+	ctx := context.Background()
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		conn, err := mysql.Connect(ctx, &vtParams)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		utils.Exec(t, conn, "insert into buffer(id, msg) values(5,'alpha')")
+		utils.Exec(t, conn, "insert into buffer(id, msg) values(6,'beta')")
+
+		// start an incomplete transaction with a long-running query
+		utils.Exec(t, conn, "begin")
+		_, err = conn.ExecuteFetch("select *, sleep(40) from buffer where id = 5 for update", 1, true)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "EOF")
+	}()
+
+	// wait for the long-running query to start executing
+	checkConn, err := mysql.Connect(ctx, &vtParams)
+	require.NoError(t, err)
+	defer checkConn.Close()
+	waitTimeout := time.After(10 * time.Second)
+	running := false
+	for running == false {
+		select {
+		case <-waitTimeout:
+			t.Fatalf("Long-running query did not start executing")
+		case <-time.After(10 * time.Millisecond):
+			// We should get a lock wait timeout error once the long-running query starts executing
+			_, err := checkConn.ExecuteFetch("select * from buffer where id = 5 for update nowait", 1, true)
+			if sqlErr, ok := err.(*sqlerror.SQLError); ok {
+				if sqlErr.Number() == sqlerror.ERLockNowait {
+					running = true
+					continue
+				}
+			}
+			require.NoError(t, err)
+		}
+	}
+
+	// Enforce a restart to enforce rollback
+	if err = clusterInstance.RestartVtgate(); err != nil {
+		t.Errorf("Fail to re-start vtgate: %v", err)
+	}
+
+	// Make a new mysql connection to vtGate
+	vtParams = clusterInstance.GetVTParams(keyspaceName)
+	conn2, err := mysql.Connect(ctx, &vtParams)
+	require.NoError(t, err)
+	defer conn2.Close()
+
+	// Verify previous transaction was rolled back. Row lock should be available, otherwise we'll get an error.
+	qr := utils.Exec(t, conn2, "select * from buffer where id = 5 for update nowait")
+	assert.Equal(t, 1, len(qr.Rows))
+}
+
 func TestErrorInAutocommitSession(t *testing.T) {
 	defer cluster.PanicHandler(t)
 	ctx := context.Background()
@@ -136,9 +201,9 @@ func TestErrorInAutocommitSession(t *testing.T) {
 	conn2, err := mysql.Connect(ctx, &vtParams)
 	require.NoError(t, err)
 	defer conn2.Close()
-	result := utils.Exec(t, conn2, "select * from buffer order by id")
+	result := utils.Exec(t, conn2, "select * from buffer where id in (1,2) order by id")
 
 	// if we have properly working autocommit code, both the successful inserts should be visible to a second
 	// connection, even if we have not done an explicit commit
-	assert.Equal(t, `[[INT64(1) VARCHAR("foo")] [INT64(2) VARCHAR("baz")] [INT64(3) VARCHAR("mark")] [INT64(4) VARCHAR("doug")]]`, fmt.Sprintf("%v", result.Rows))
+	assert.Equal(t, `[[INT64(1) VARCHAR("foo")] [INT64(2) VARCHAR("baz")]]`, fmt.Sprintf("%v", result.Rows))
 }
