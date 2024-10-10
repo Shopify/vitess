@@ -68,6 +68,8 @@ func (st *StatsConn) ListDir(ctx context.Context, dirPath string, full bool) ([]
 	res, err := st.conn.ListDir(ctx, dirPath, full)
 	if err != nil {
 		topoStatsConnErrors.Add(statsKey, int64(1))
+		stack := stackTrace()
+		log.Warningf("ListDir failed for cell %s, dirPath %s: %v\n%s", st.cell, dirPath, err, stack)
 		return res, err
 	}
 	return res, err
@@ -83,6 +85,8 @@ func (st *StatsConn) Create(ctx context.Context, filePath string, contents []byt
 	defer topoStatsConnTimings.Record(statsKey, startTime)
 	res, err := st.conn.Create(ctx, filePath, contents)
 	if err != nil {
+		stack := stackTrace()
+		log.Warningf("Create failed for cell %s, filePath %s: %v\n%s", st.cell, filePath, err, stack)
 		topoStatsConnErrors.Add(statsKey, int64(1))
 		return res, err
 	}
@@ -100,6 +104,8 @@ func (st *StatsConn) Update(ctx context.Context, filePath string, contents []byt
 	res, err := st.conn.Update(ctx, filePath, contents, version)
 	if err != nil {
 		topoStatsConnErrors.Add(statsKey, int64(1))
+		stack := stackTrace()
+		log.Warningf("Update failed for cell %s, filePath %s: %v\n%s", st.cell, filePath, err, stack)
 		return res, err
 	}
 	return res, err
@@ -146,6 +152,8 @@ func (st *StatsConn) List(ctx context.Context, filePathPrefix string) ([]KVInfo,
 	defer topoStatsConnTimings.Record(statsKey, startTime)
 	bytes, err := st.conn.List(ctx, filePathPrefix)
 	if err != nil {
+		stack := stackTrace()
+		log.Warningf("List failed for cell %s, filePathPrefix %s: %v\n%s", st.cell, filePathPrefix, err, stack)
 		topoStatsConnErrors.Add(statsKey, int64(1))
 		return bytes, err
 	}
@@ -163,6 +171,8 @@ func (st *StatsConn) Delete(ctx context.Context, filePath string, version Versio
 	err := st.conn.Delete(ctx, filePath, version)
 	if err != nil {
 		topoStatsConnErrors.Add(statsKey, int64(1))
+		stack := stackTrace()
+		log.Warningf("Delete failed for cell %s, filePath %s: %v\n%s", st.cell, filePath, err, stack)
 		return err
 	}
 	return err
