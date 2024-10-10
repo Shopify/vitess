@@ -18,6 +18,8 @@ package topo
 
 import (
 	"context"
+	"fmt"
+	"runtime"
 	"time"
 
 	"vitess.io/vitess/go/stats"
@@ -110,11 +112,31 @@ func (st *StatsConn) Get(ctx context.Context, filePath string) ([]byte, Version,
 	defer topoStatsConnTimings.Record(statsKey, startTime)
 	bytes, version, err := st.conn.Get(ctx, filePath)
 	if err != nil {
-		log.Warningf("Get failed for cell %s, filePath %s: %v", st.cell, filePath, err)
+		stack := stackTrace()
+		log.Warningf("Get failed for cell %s, filePath %s: %v\n%s", st.cell, filePath, err, stack)
 		topoStatsConnErrors.Add(statsKey, int64(1))
 		return bytes, version, err
 	}
 	return bytes, version, err
+}
+
+func stackTrace() []string {
+	pc := make([]uintptr, 10)
+	n := runtime.Callers(0, pc)
+	if n == 0 {
+		return []string{}
+	}
+	pc = pc[:n]
+	frames := runtime.CallersFrames(pc)
+	stack := []string{}
+	for {
+		frame, more := frames.Next()
+		if !more {
+			break
+		}
+		stack = append(stack, fmt.Sprintf("%s (%s:%d)", frame.Function, frame.File, frame.Line))
+	}
+	return stack
 }
 
 // List is part of the Conn interface
