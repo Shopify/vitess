@@ -420,6 +420,7 @@ func Validate(ctx context.Context, ts *Server, tabletAlias *topodatapb.TabletAli
 	// Validate the entry in the shard replication nodes
 	si, err := ts.GetShardReplication(ctx, tablet.Alias.Cell, tablet.Keyspace, tablet.Shard)
 	if err != nil {
+		log.Warningf("GetShardReplication-- Validate failed for cell %s, keyspace %s, shard %s: %v", tablet.Alias.Cell, tablet.Keyspace, tablet.Shard, err)
 		return err
 	}
 

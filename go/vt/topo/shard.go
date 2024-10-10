@@ -214,8 +214,8 @@ func (ts *Server) GetShard(ctx context.Context, keyspace, shard string) (*ShardI
 	shardPath := shardFilePath(keyspace, shard)
 
 	data, version, err := ts.globalCell.Get(ctx, shardPath)
-
 	if err != nil {
+		log.Warningf("GetShard failed for keyspace %s, shard %s: %v", keyspace, shard, err)
 		return nil, err
 	}
 
@@ -608,6 +608,9 @@ func (ts *Server) FindAllTabletAliasesInShardByCell(ctx context.Context, keyspac
 		go func(cell string) {
 			defer wg.Done()
 			sri, err := ts.GetShardReplication(ctx, cell, keyspace, shard)
+			if err != nil {
+				log.Warningf("GetShardReplication-- FindAllTabletAliasesInShardByCell failed for cell %s, keyspace %s, shard %s: %v", cell, keyspace, shard, err)
+			}
 			switch {
 			case err == nil:
 				mutex.Lock()
