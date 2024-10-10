@@ -608,6 +608,9 @@ func (ts *Server) FindAllTabletAliasesInShardByCell(ctx context.Context, keyspac
 		go func(cell string) {
 			defer wg.Done()
 			sri, err := ts.GetShardReplication(ctx, cell, keyspace, shard)
+			if err != nil {
+				log.Warningf("GetShardReplication-- FindAllTabletAliasesInShardByCell failed for cell %s, keyspace %s, shard %s: %v", cell, keyspace, shard, err)
+			}
 			switch {
 			case err == nil:
 				mutex.Lock()

@@ -25,6 +25,7 @@ import (
 
 	"context"
 
+	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/vterrors"
@@ -164,10 +165,12 @@ func CompareShardReplications(ctx context.Context, fromTS, toTS *topo.Server) er
 			for _, cell := range cells {
 				fromSRi, err := fromTS.GetShardReplication(ctx, cell, keyspace, shard)
 				if err != nil {
+					log.Warningf("GetShardReplication-- FromTS.CompareShardReplications failed for cell %s, keyspace %s, shard %s: %v", cell, keyspace, shard, err)
 					return vterrors.Wrapf(err, "GetShardReplication(%v, %v, %v)", cell, keyspace, shard)
 				}
 				toSRi, err := toTS.GetShardReplication(ctx, cell, keyspace, shard)
 				if err != nil {
+					log.Warningf("GetShardReplication-- toTS.CompareShardReplications failed for cell %s, keyspace %s, shard %s: %v", cell, keyspace, shard, err)
 					return vterrors.Wrapf(err, "GetShardReplication(%v, %v, %v)", cell, keyspace, shard)
 				}
 				if !reflect.DeepEqual(fromSRi.ShardReplication, toSRi.ShardReplication) {

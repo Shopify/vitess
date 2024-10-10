@@ -177,6 +177,7 @@ func CopyShardReplications(ctx context.Context, fromTS, toTS *topo.Server) error
 			for _, cell := range cells {
 				sri, err := fromTS.GetShardReplication(ctx, cell, keyspace, shard)
 				if err != nil {
+					log.Warningf("GetShardReplication-- CopyShardReplications failed for cell %s, keyspace %s, shard %s: %v", cell, keyspace, shard, err)
 					return fmt.Errorf("GetShardReplication(%v, %v, %v): %w", cell, keyspace, shard, err)
 				}
 

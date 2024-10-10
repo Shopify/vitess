@@ -399,6 +399,7 @@ func (tp *TabletPicker) GetMatchingTablets(ctx context.Context) []*topo.TabletIn
 			// Match cell, keyspace, and shard.
 			sri, err := tp.ts.GetShardReplication(shortCtx, cell, tp.keyspace, tp.shard)
 			if err != nil {
+				log.Warningf("ShardReplication -- GetMatchingTablets failed for cell %s, keyspace %s, shard %s: %v", cell, tp.keyspace, tp.shard, err)
 				continue
 			}
 			for _, node := range sri.Nodes {
