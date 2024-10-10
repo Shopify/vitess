@@ -140,7 +140,12 @@ func (c *TeeConn) Update(ctx context.Context, filePath string, contents []byte, 
 
 // Get is part of the topo.Conn interface.
 func (c *TeeConn) Get(ctx context.Context, filePath string) ([]byte, topo.Version, error) {
-	return c.primary.Get(ctx, filePath)
+	primaryBytes, primaryVersion, primaryErr := c.primary.Get(ctx, filePath)
+	if primaryErr != nil {
+		log.Warningf("tee.Get failed filePath %s: %v", filePath, primaryErr)
+	}
+
+	return primaryBytes, primaryVersion, primaryErr
 }
 
 // List is part of the topo.Conn interface.
