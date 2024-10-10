@@ -190,7 +190,7 @@ func (ts *Server) UpdateShardReplicationFields(ctx context.Context, cell, keyspa
 				return vterrors.Wrap(err, "bad ShardReplication data")
 			}
 		default:
-			log.Warningf("GetShardReplication failed for cell %s, keyspace %s, shard %s: %v", cell, keyspace, shard, err)
+			log.Warningf("UpdateShardReplicationFields failed for cell %s, keyspace %s, shard %s: %v", cell, keyspace, shard, err)
 			return err
 		}
 
