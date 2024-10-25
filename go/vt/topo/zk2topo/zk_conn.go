@@ -259,6 +259,7 @@ func (c *ZkConn) withRetry(ctx context.Context, action func(conn *zk.Conn) error
 		var conn *zk.Conn
 		conn, err = c.getConn(ctx)
 		if err != nil {
+			log.Warningf("withRetry Cant connect. Err:%v", err)
 			// We can't connect, try again.
 			continue
 		}
@@ -268,6 +269,7 @@ func (c *ZkConn) withRetry(ctx context.Context, action func(conn *zk.Conn) error
 		if err != zk.ErrConnectionClosed {
 			// It worked, or it failed for another reason
 			// than connection related.
+			log.Warningf("withRetry. Returning error. Err:%v", err)
 			return
 		}
 
