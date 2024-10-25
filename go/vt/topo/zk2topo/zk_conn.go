@@ -24,6 +24,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -288,6 +289,8 @@ func (c *ZkConn) getConn(ctx context.Context) (*zk.Conn, error) {
 	defer c.mu.Unlock()
 
 	if c.conn == nil {
+		stack := stackTrace()
+		log.Warningf("getConn: %s Stack: %v", c.addr, stack)
 		conn, events, err := dialZk(ctx, c.addr)
 		if err != nil {
 			return nil, err
@@ -297,6 +300,25 @@ func (c *ZkConn) getConn(ctx context.Context) (*zk.Conn, error) {
 		c.maybeAddAuth(ctx)
 	}
 	return c.conn, nil
+}
+
+func stackTrace() []string {
+	pc := make([]uintptr, 10)
+	n := runtime.Callers(0, pc)
+	if n == 0 {
+		return []string{}
+	}
+	pc = pc[:n]
+	frames := runtime.CallersFrames(pc)
+	stack := []string{}
+	for {
+		frame, more := frames.Next()
+		if !more {
+			break
+		}
+		stack = append(stack, fmt.Sprintf("%s (%s:%d)", frame.Function, frame.File, frame.Line))
+	}
+	return stack
 }
 
 // maybeAddAuth calls AddAuth if the `-topo_zk_auth_file` flag was specified
