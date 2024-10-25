@@ -275,6 +275,7 @@ func (c *ZkConn) withRetry(ctx context.Context, action func(conn *zk.Conn) error
 
 		// We got an error, because the connection was closed.
 		// Let's clear up our errored connection and try again.
+		log.Warningf("withRetry. ErrConnectionClosed")
 		c.mu.Lock()
 		if c.conn == conn {
 			c.conn = nil
