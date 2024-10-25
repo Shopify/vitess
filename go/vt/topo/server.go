@@ -281,9 +281,11 @@ func (ts *Server) ConnForCell(ctx context.Context, cell string) (Conn, error) {
 		// The cell name can be re-used with a different ServerAddress and/or Root
 		// in which case we should get a new connection and update the cache
 		if ci.ServerAddress == cc.cellInfo.ServerAddress && ci.Root == cc.cellInfo.Root {
+			log.Warningf("ConnForCell. Returning cached connection. Cell:%v, ServerAddress:%v, Root:%v, cellInfoServerAddress:%v, cellInfoRoot:%v", cell, ci.ServerAddress, ci.Root, cc.cellInfo.ServerAddress, cc.cellInfo.Root)
 			return cc.conn, nil
 		}
 		// Close the cached connection, we don't need it anymore
+		log.Warningf("ConnForCell. Closing cached connection. Cell:%v, ServerAddress:%v, Root:%v, cellInfoServerAddress:%v, cellInfoRoot:%v", cell, ci.ServerAddress, ci.Root, cc.cellInfo.ServerAddress, cc.cellInfo.Root)
 		if cc.conn != nil {
 			cc.conn.Close()
 		}

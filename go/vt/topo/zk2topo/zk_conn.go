@@ -303,7 +303,7 @@ func (c *ZkConn) getConn(ctx context.Context) (*zk.Conn, error) {
 }
 
 func stackTrace() []string {
-	pc := make([]uintptr, 10)
+	pc := make([]uintptr, 20)
 	n := runtime.Callers(0, pc)
 	if n == 0 {
 		return []string{}
