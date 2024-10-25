@@ -361,6 +361,7 @@ func (c *ZkConn) handleSessionEvents(conn *zk.Conn, session <-chan zk.Event) {
 		case zk.StateDisconnected:
 			c.mu.Lock()
 			if c.conn == conn {
+				conn.Close()
 				// The ZkConn still references this
 				// connection, let's nil it.
 				c.conn = nil
