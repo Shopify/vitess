@@ -28,8 +28,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-zookeeper/zk"
 	"github.com/spf13/pflag"
-	"github.com/z-division/go-zookeeper/zk"
 	"golang.org/x/sync/semaphore"
 
 	"vitess.io/vitess/go/vt/log"
@@ -393,7 +393,7 @@ func dialZk(ctx context.Context, addr string) (*zk.Conn, <-chan zk.Event, error)
 	}
 	// Make sure we re-resolve the DNS name every time we reconnect to a server
 	// In environments where DNS changes such as Kubernetes we can't cache the IP address
-	hostProvider := zk.WithHostProvider(&zk.SimpleDNSHostProvider{})
+	hostProvider := zk.WithHostProvider(&zk.DNSHostProvider{})
 
 	// zk.Connect automatically shuffles the servers
 	zconn, session, err := zk.Connect(servers, baseTimeout, dialer, hostProvider)

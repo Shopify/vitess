@@ -18,3 +18,5 @@ require (
 )
 
 replace k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible => k8s.io/client-go v2.0.0-alpha.1+incompatible
+
+replace github.com/z-division/go-zookeeper => github.com/go-zookeeper/zk v1.0.4

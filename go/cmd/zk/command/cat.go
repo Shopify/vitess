@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-zookeeper/zk"
 	"github.com/spf13/cobra"
-	"github.com/z-division/go-zookeeper/zk"
 	"golang.org/x/term"
 
 	"vitess.io/vitess/go/cmd/zk/internal/zkfilepath"

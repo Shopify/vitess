@@ -19,7 +19,7 @@ package zk2topo
 import (
 	"context"
 
-	"github.com/z-division/go-zookeeper/zk"
+	"github.com/go-zookeeper/zk"
 
 	"vitess.io/vitess/go/vt/topo"
 )

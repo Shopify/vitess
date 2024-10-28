@@ -65,7 +65,6 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82
-	github.com/z-division/go-zookeeper v1.0.0
 	go.etcd.io/etcd/api/v3 v3.5.12
 	go.etcd.io/etcd/client/pkg/v3 v3.5.12
 	go.etcd.io/etcd/client/v3 v3.5.12
@@ -96,6 +95,7 @@ require (
 	github.com/Shopify/toxiproxy/v2 v2.5.0
 	github.com/bndr/gotabulate v1.1.2
 	github.com/gammazero/deque v0.2.1
+	github.com/go-zookeeper/zk v1.0.4
 	github.com/google/safehtml v0.1.0
 	github.com/hashicorp/go-version v1.6.0
 	github.com/kr/pretty v0.3.1

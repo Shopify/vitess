@@ -26,7 +26,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/z-division/go-zookeeper/zk"
+	"github.com/go-zookeeper/zk"
 
 	"vitess.io/vitess/go/cmd/zk/internal/zkfilepath"
 	"vitess.io/vitess/go/vt/topo/zk2topo"

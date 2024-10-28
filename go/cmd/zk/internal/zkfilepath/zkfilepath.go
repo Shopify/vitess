@@ -22,7 +22,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/z-division/go-zookeeper/zk"
+	"github.com/go-zookeeper/zk"
 
 	"vitess.io/vitess/go/vt/topo/zk2topo"
 )
