@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.vitess</groupId>
     <artifactId>vitess-parent</artifactId>
-    <version>18.0.5-shopify-6</version>
+    <version>18.0.5-shopify-7</version>
   </parent>
   <artifactId>vitess-client</artifactId>
 
