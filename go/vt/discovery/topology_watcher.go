@@ -190,6 +190,17 @@ func (tw *TopologyWatcher) loadTablets() {
 			topologyWatcherOperations.Add(topologyWatcherOpGetTablet, 1)
 			<-tw.sem // Done; enable next request to run
 			if err != nil {
+				if !topo.IsErrType(err, topo.NoNode) {
+					// We failed to get the tablet, but it may still exist.
+					// We don't want this tablet to be removed from the tw.tablets map or the healthcheck,
+					// so we fill the gap in the newTablets map using the existing tablet.
+					tw.mu.Lock()
+					aliasStr := topoproto.TabletAliasString(alias)
+					if val, ok := tw.tablets[aliasStr]; ok {
+						newTablets[aliasStr] = val
+					}
+					tw.mu.Unlock()
+				}
 				topologyWatcherErrors.Add(topologyWatcherOpGetTablet, 1)
 				select {
 				case <-tw.ctx.Done():
