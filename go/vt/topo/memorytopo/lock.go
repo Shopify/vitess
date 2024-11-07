@@ -42,11 +42,25 @@ type memoryTopoLockDescriptor struct {
 
 // TryLock is part of the topo.Conn interface. Its implementation is same as Lock
 func (c *Conn) TryLock(ctx context.Context, dirPath, contents string) (topo.LockDescriptor, error) {
+	c.factory.mu.Lock()
+	err := c.factory.getOperationError(TryLock, dirPath)
+	c.factory.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
 	return c.Lock(ctx, dirPath, contents)
 }
 
 // Lock is part of the topo.Conn interface.
 func (c *Conn) Lock(ctx context.Context, dirPath, contents string) (topo.LockDescriptor, error) {
+	c.factory.mu.Lock()
+	err := c.factory.getOperationError(Lock, dirPath)
+	c.factory.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
 	return c.lock(ctx, dirPath, contents)
 }
 
