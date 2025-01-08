@@ -159,6 +159,7 @@ mysql57)
     ;;
 mysql80|percona57)
     echo 'deb http://repo.percona.com/apt bullseye main' > /etc/apt/sources.list.d/percona.list
+    echo 'deb http://repo.percona.com/pxb-80/apt bullseye main' > /etc/apt/sources.list.d/percona.list
     ;;
 percona80)
     echo 'deb http://repo.percona.com/apt bullseye main' > /etc/apt/sources.list.d/percona.list
