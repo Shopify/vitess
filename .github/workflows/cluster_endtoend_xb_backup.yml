@@ -16,7 +16,7 @@ env:
 jobs:
   build:
     name: Run endtoend tests on Cluster (xb_backup)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
     - name: Skip CI
@@ -30,7 +30,7 @@ jobs:
       id: skip-workflow
       run: |
         skip='false'
-        if [[ "${{github.event.pull_request}}" ==  "" ]] && [[ "${{github.ref}}" != "refs/heads/main" ]] && [[ ! "${{github.ref}}" =~ ^refs/heads/release-[0-9]+\.[0-9]$ ]] && [[ ! "${{github.ref}}" =~ "refs/tags/.*" ]]; then
+        if [[ "${{github.event.pull_request}}" ==  "" ]]; then
           skip='true'
         fi
         echo Skip ${skip}
@@ -101,8 +101,16 @@ jobs:
         sudo percona-release setup ps80
         sudo apt-get update
 
+        # We have to install this old version of libaio1 in case we end up testing with MySQL 5.7. See also:
+        # https://bugs.launchpad.net/ubuntu/+source/libaio/+bug/2067501
+        curl -L -O http://mirrors.kernel.org/ubuntu/pool/main/liba/libaio/libaio1_0.3.112-13build1_amd64.deb
+        sudo dpkg -i libaio1_0.3.112-13build1_amd64.deb
+        # libtinfo5 is also needed for older MySQL 5.7 builds.
+        curl -L -O http://mirrors.kernel.org/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
+        sudo dpkg -i libtinfo5_6.3-2ubuntu0.1_amd64.deb
+
         # Install everything else we need, and configure
-        sudo apt-get install -y percona-server-server percona-server-client make unzip g++ etcd git wget eatmydata xz-utils libncurses5
+        sudo apt-get install -y percona-server-server percona-server-client make unzip g++ etcd-client etcd-server git wget eatmydata xz-utils libncurses6
 
         sudo service mysql stop
         sudo service etcd stop

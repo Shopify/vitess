@@ -230,7 +230,11 @@ func DeleteKs(
 			tablet.tm.Stop()
 			tablet.tm.Close()
 			tablet.qsc.SchemaEngine().Close()
-			err := ts.DeleteTablet(ctx, tablet.alias)
+			err := tablet.qsc.QueryService().Close(ctx)
+			if err != nil {
+				return err
+			}
+			err = ts.DeleteTablet(ctx, tablet.alias)
 			if err != nil {
 				return err
 			}
@@ -316,6 +320,11 @@ func CreateKs(
 		// create a regular keyspace
 		if err := ts.CreateKeyspace(ctx, keyspace, &topodatapb.Keyspace{}); err != nil {
 			return 0, fmt.Errorf("CreateKeyspace(%v) failed: %v", keyspace, err)
+		}
+
+		// make sure a valid vschema has been loaded
+		if err := ts.EnsureVSchema(ctx, keyspace); err != nil {
+			return 0, fmt.Errorf("EnsureVSchema(%v) failed: %v", keyspace, err)
 		}
 
 		// iterate through the shards
