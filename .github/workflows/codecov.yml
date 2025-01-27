@@ -9,8 +9,8 @@ permissions: read-all
 jobs:
   test:
     name: Code Coverage
-    runs-on: gh-hosted-runners-16cores-1-24.04
-
+    runs-on: ubuntu-24.04
+    if: github.repository == 'vitessio/vitess'
     steps:
     - name: Check out code
       uses: actions/checkout@v4
@@ -83,7 +83,7 @@ jobs:
 
         go mod download
         go install golang.org/x/tools/cmd/goimports@latest
-        
+
     - name: Run make tools
       if: steps.changes.outputs.changed_files == 'true'
       run: |
