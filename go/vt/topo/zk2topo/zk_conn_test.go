@@ -60,3 +60,19 @@ func TestZkConnClosedOnDisconnect(t *testing.T) {
 
 	require.Equal(t, zk.StateDisconnected, oldConn.State(), "Connection is not in disconnected state")
 }
+
+func TestDialWaitsForSession(t *testing.T) {
+	zkd, serverAddr := zkctl.StartLocalZk(testfiles.GoVtTopoZk2topoZkID, testfiles.GoVtTopoZk2topoPort)
+	defer zkd.Teardown()
+
+	conn, _, err := dialZk(context.Background(), serverAddr)
+	if err != nil {
+		t.Fatalf("dialZk failed: %v", err)
+	}
+
+	defer conn.Close()
+
+	if conn.State() != zk.StateHasSession {
+		t.Fatalf("zk connection not in StateHasSession: %v", conn.State())
+	}
+}

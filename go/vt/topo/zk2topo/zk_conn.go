@@ -406,7 +406,7 @@ func dialZk(ctx context.Context, addr string) (*zk.Conn, <-chan zk.Event, error)
 			return nil, nil, ctx.Err()
 		case event := <-session:
 			switch event.State {
-			case zk.StateConnected:
+			case zk.StateHasSession:
 				// success
 				return zconn, session, nil
 
