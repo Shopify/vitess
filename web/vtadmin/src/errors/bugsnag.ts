@@ -26,7 +26,14 @@ const { VITE_BUGSNAG_API_KEY } = env();
  */
 export const initialize = () => {
     if (typeof VITE_BUGSNAG_API_KEY === 'string' && VITE_BUGSNAG_API_KEY.length) {
-        BugsnagJS.start(VITE_BUGSNAG_API_KEY);
+        BugsnagJS.start({ 
+            apiKey: VITE_BUGSNAG_API_KEY,
+            // Set endpoints to point to proxy
+            endpoints: {
+                notify: 'https://error-analytics-production.shopifysvc.com',
+                sessions: 'https://error-analytics-sessions-production.shopifysvc.com',
+            },
+        });
     }
 };
 
