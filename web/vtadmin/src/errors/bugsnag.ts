@@ -26,7 +26,7 @@ const { VITE_BUGSNAG_API_KEY } = env();
  */
 export const initialize = () => {
     if (typeof VITE_BUGSNAG_API_KEY === 'string' && VITE_BUGSNAG_API_KEY.length) {
-        BugsnagJS.start({ 
+        BugsnagJS.start({
             apiKey: VITE_BUGSNAG_API_KEY,
             // Set endpoints to point to proxy
             endpoints: {
