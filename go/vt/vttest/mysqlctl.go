@@ -37,6 +37,7 @@ type MySQLManager interface {
 	Setup() error
 	Start() error
 	TearDown() error
+	TearDownWithTimeout(timeout time.Duration) error
 	Auth() (string, string)
 	Address() (string, int)
 	UnixSocket() string
@@ -106,7 +107,18 @@ func (ctl *Mysqlctl) Start() error {
 
 // TearDown shutdowns the running mysqld service
 func (ctl *Mysqlctl) TearDown() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	return ctl.TearDownWithTimeout(360 * time.Second)
+}
+
+// TearDownWithTimeout shutdowns the running mysqld service with a configurable timeout
+func (ctl *Mysqlctl) TearDownWithTimeout(timeout time.Duration) error {
+	// Use the provided timeout, ensuring it's at least 60 seconds
+	if timeout < 60*time.Second {
+		timeout = 60 * time.Second
+		log.Warningf("MySQL shutdown timeout too short, using minimum of 60 seconds")
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx,
@@ -121,6 +133,10 @@ func (ctl *Mysqlctl) TearDown() error {
 	cmd.Env = append(cmd.Env, ctl.Env...)
 
 	_, err := cmd.Output()
+	if err != nil {
+		// Log the error with timeout information for debugging
+		log.Errorf("MySQL shutdown failed with timeout %v: %v", timeout, err)
+	}
 	return err
 }
 

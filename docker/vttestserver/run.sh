@@ -43,5 +43,6 @@ rm -vf "$VTDATAROOT"/"$tablet_dir"/{mysql.sock,mysql.sock.lock}
 	--planner-version="${PLANNER_VERSION:-gen4}" \
 	--vschema_ddl_authorized_users=% \
 	--tablet_refresh_interval "${TABLET_REFRESH_INTERVAL:-10s}" \
+	--mysql_shutdown_timeout "${MYSQL_SHUTDOWN_TIMEOUT:-6m}" \
 	--schema_dir="/vt/schema/"
 

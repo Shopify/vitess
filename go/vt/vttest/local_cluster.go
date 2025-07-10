@@ -29,6 +29,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"strconv"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -152,6 +154,11 @@ type Config struct {
 	ExternalTopoGlobalRoot string
 
 	VtgateTabletRefreshInterval time.Duration
+
+	// MySQLShutdownTimeout is the timeout for MySQL shutdown operations.
+	// If not set, defaults to 6 minutes (360 seconds) to allow for graceful shutdown.
+	// This should be longer than the MySQL shutdown timeout (typically 300s).
+	MySQLShutdownTimeout time.Duration
 }
 
 // InitSchemas is a shortcut for tests that just want to setup a single
@@ -437,12 +444,32 @@ func (db *LocalCluster) TearDown() error {
 		}
 	}
 
-	if err := db.mysql.TearDown(); err != nil {
-		errors = append(errors, fmt.Sprintf("mysql: %s", err))
+	// Use configurable timeout, defaulting to 6 minutes if not set
+	shutdownTimeout := db.MySQLShutdownTimeout
+	if shutdownTimeout == 0 {
+		shutdownTimeout = 6 * time.Minute
+		log.Infof("Using default MySQL shutdown timeout: %v", shutdownTimeout)
+	} else {
+		log.Infof("Using configured MySQL shutdown timeout: %v", shutdownTimeout)
+	}
 
-		log.Errorf("failed to shutdown MySQL: %s", err)
-		if err, ok := err.(*exec.ExitError); ok {
-			log.Errorf("stderr: %s", err.Stderr)
+	// Enhanced MySQL shutdown with configurable timeout
+	var shutdownErr error
+	if timeoutManager, ok := db.mysql.(interface{ TearDownWithTimeout(time.Duration) error }); ok {
+		shutdownErr = timeoutManager.TearDownWithTimeout(shutdownTimeout)
+	} else {
+		// Fallback to regular TearDown if timeout method not available
+		shutdownErr = db.mysql.TearDown()
+	}
+
+	if shutdownErr != nil {
+		log.Errorf("failed to shutdown MySQL: %s", shutdownErr)
+		
+		// Don't immediately continue - try to force shutdown if graceful fails
+		if forceErr := db.forceShutdownMySQL(); forceErr != nil {
+			errors = append(errors, fmt.Sprintf("mysql graceful shutdown failed: %s, force shutdown also failed: %s", shutdownErr, forceErr))
+		} else {
+			log.Warningf("MySQL graceful shutdown failed but force shutdown succeeded: %s", shutdownErr)
 		}
 	}
 
@@ -458,6 +485,73 @@ func (db *LocalCluster) TearDown() error {
 	}
 
 	return nil
+}
+
+// forceShutdownMySQL attempts to force shutdown MySQL if graceful shutdown fails
+func (db *LocalCluster) forceShutdownMySQL() error {
+	// Try to get MySQL configuration to check socket and PID files
+	if mysqlctl, ok := db.mysql.(*Mysqlctl); ok {
+		socketFile := mysqlctl.UnixSocket()
+		pidFile := path.Join(mysqlctl.TabletDir(), "mysql.pid")
+		
+		log.Infof("Checking for stale MySQL files: socket=%s, pid=%s", socketFile, pidFile)
+		
+		// Check if socket file exists
+		if _, err := os.Stat(socketFile); err == nil {
+			log.Warningf("MySQL socket file still exists: %s", socketFile)
+			if err := os.Remove(socketFile); err != nil {
+				log.Errorf("Failed to remove stale socket file: %v", err)
+			}
+		}
+		
+		// Check if PID file exists and try to kill the process
+		if pidData, err := os.ReadFile(pidFile); err == nil {
+			if pid, parseErr := strconv.Atoi(strings.TrimSpace(string(pidData))); parseErr == nil {
+				log.Warningf("Found MySQL PID file with PID %d, attempting to kill process", pid)
+				
+				// Try to kill the process
+				if process, findErr := os.FindProcess(pid); findErr == nil {
+					// First try SIGTERM
+					if killErr := process.Signal(syscall.SIGTERM); killErr == nil {
+						log.Infof("Sent SIGTERM to MySQL process %d", pid)
+						
+						// Wait up to 30 seconds for graceful shutdown
+						for i := 0; i < 30; i++ {
+							if killErr := process.Signal(syscall.Signal(0)); killErr != nil {
+								// Process is gone
+								log.Infof("MySQL process %d terminated gracefully", pid)
+								break
+							}
+							time.Sleep(1 * time.Second)
+						}
+						
+						// If still running, try SIGKILL
+						if killErr := process.Signal(syscall.Signal(0)); killErr == nil {
+							log.Warningf("MySQL process %d still running, sending SIGKILL", pid)
+							if killErr := process.Kill(); killErr != nil {
+								log.Errorf("Failed to kill MySQL process %d: %v", pid, killErr)
+							}
+						}
+					}
+				}
+			}
+			
+			// Remove PID file
+			if err := os.Remove(pidFile); err != nil {
+				log.Errorf("Failed to remove PID file: %v", err)
+			}
+		}
+		
+		// Final check - if socket file still exists, force remove it
+		if _, err := os.Stat(socketFile); err == nil {
+			log.Warningf("Force removing persistent socket file: %s", socketFile)
+			os.Remove(socketFile)
+		}
+		
+		return nil
+	}
+	
+	return fmt.Errorf("could not access MySQL configuration for force shutdown")
 }
 
 func (db *LocalCluster) shardNames(keyspace *vttestpb.Keyspace) (names []string) {

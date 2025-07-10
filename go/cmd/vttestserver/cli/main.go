@@ -217,6 +217,7 @@ func New() (cmd *cobra.Command) {
 	cmd.Flags().StringVar(&config.ExternalTopoGlobalRoot, "external_topo_global_root", "", "the path of the global topology data in the global topology server for vtcombo process")
 
 	cmd.Flags().DurationVar(&config.VtgateTabletRefreshInterval, "tablet_refresh_interval", 10*time.Second, "Interval at which vtgate refreshes tablet information from topology server.")
+	cmd.Flags().DurationVar(&config.MySQLShutdownTimeout, "mysql_shutdown_timeout", 6*time.Minute, "Timeout for MySQL shutdown operations during cluster teardown. Should be longer than MySQL's shutdown timeout (typically 300s).")
 	acl.RegisterFlags(cmd.Flags())
 
 	return cmd
