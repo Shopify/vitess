@@ -66,15 +66,15 @@ require (
 	go.etcd.io/etcd/client/pkg/v3 v3.5.19
 	go.etcd.io/etcd/client/v3 v3.5.19
 	go.uber.org/mock v0.5.0
-	golang.org/x/crypto v0.36.0 // indirect
-	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/net v0.38.0
+	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/net v0.47.0
 	golang.org/x/oauth2 v0.28.0
-	golang.org/x/sys v0.31.0
-	golang.org/x/term v0.30.0
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/sys v0.38.0
+	golang.org/x/term v0.37.0
+	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.11.0
-	golang.org/x/tools v0.31.0
+	golang.org/x/tools v0.38.0
 	google.golang.org/api v0.226.0
 	google.golang.org/genproto v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
 	google.golang.org/grpc v1.71.0
@@ -109,7 +109,7 @@ require (
 	github.com/xlab/treeprint v1.2.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
-	golang.org/x/sync v0.12.0
+	golang.org/x/sync v0.18.0
 	gonum.org/v1/gonum v0.15.1
 	modernc.org/sqlite v1.36.1
 )
