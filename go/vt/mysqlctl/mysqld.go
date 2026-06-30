@@ -820,7 +820,11 @@ func (mysqld *Mysqld) getMycnfTemplate() string {
 				log.Infof("this version of Vitess does not include built-in support for %v %v", mysqld.capabilities.flavor, mysqld.capabilities.version)
 			}
 		case 8:
-			versionConfig = config.MycnfMySQL80
+			if mysqld.capabilities.version.Minor >= 4 {
+				versionConfig = config.MycnfMySQL84
+			} else {
+				versionConfig = config.MycnfMySQL80
+			}
 		default:
 			log.Infof("this version of Vitess does not include built-in support for %v %v", mysqld.capabilities.flavor, mysqld.capabilities.version)
 		}
